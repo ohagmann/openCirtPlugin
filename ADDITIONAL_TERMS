@@ -1,0 +1,48 @@
+ADDITIONAL TERMS FOR BATCHTOOL / openCirt
+pursuant to the Business Source License 1.1
+============================================================================
+
+Copyright (c) 2025 Oliver Hagmann
+
+============================================================================
+1. DISCLAIMER OF WARRANTY AND LIMITATION OF LIABILITY
+============================================================================
+
+THIS SOFTWARE PERFORMS AUTOMATED BATCH OPERATIONS ON CAD DRAWING FILES
+(DWG). BY DESIGN, IT CAN MODIFY, OVERWRITE, OR ALTER LARGE NUMBERS OF
+FILES IN A SINGLE OPERATION. INCORRECT CONFIGURATION, DEFECTIVE LISP
+SCRIPTS, OR SOFTWARE DEFECTS CAN RESULT IN IRREVERSIBLE DATA LOSS OR
+CORRUPTION OF DRAWING FILES.
+
+THE LICENSOR PROVIDES THIS SOFTWARE "AS IS" WITHOUT WARRANTY OF ANY KIND.
+THE LICENSOR SHALL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES ARISING FROM THE USE OF THIS
+SOFTWARE, INCLUDING BUT NOT LIMITED TO:
+
+  - LOSS OR CORRUPTION OF DWG FILES, PROJECT DATA, OR ANY OTHER DATA
+  - INCORRECT MODIFICATIONS TO DRAWINGS, ATTRIBUTES, LAYERS, OR TEXT
+  - FINANCIAL LOSSES RESULTING FROM DAMAGED OR UNUSABLE DRAWING FILES
+  - PROJECT DELAYS CAUSED BY DATA RECOVERY OR REWORK
+  - ANY DAMAGES ARISING FROM AUTOMATED LISP SCRIPT EXECUTION
+
+THE USER IS SOLELY RESPONSIBLE FOR:
+
+  - CREATING AND VERIFYING BACKUPS BEFORE EACH BATCH OPERATION
+  - TESTING ALL CONFIGURATIONS AND LISP SCRIPTS ON SAMPLE FILES
+    BEFORE PROCESSING PRODUCTION DATA
+  - VALIDATING RESULTS AFTER EACH BATCH RUN
+
+USE OF THIS SOFTWARE IS ENTIRELY AT YOUR OWN RISK.
+
+
+============================================================================
+2. ATTRIBUTION
+============================================================================
+
+If you distribute copies or modified versions of this Software, you must:
+
+  a) Retain the LICENSE file and this ADDITIONAL_TERMS file in their
+     entirety.
+  b) Clearly indicate any modifications you have made.
+  c) Not use the names "Batchtool", "openCirt", or the Licensor's name
+     to endorse or promote derived works without written permission.

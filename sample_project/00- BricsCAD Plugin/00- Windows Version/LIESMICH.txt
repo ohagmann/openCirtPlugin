@@ -1,0 +1,17 @@
+opencirt-<Version>.brx - openCirt fuer BricsCAD V26 unter Windows
+==================================================================
+
+Der Dateiname traegt die Version, z.B. opencirt-2.0.0.brx.
+
+Laden
+  1. Die Datei an einen festen Ort kopieren, z.B. C:\BricsCAD Plugins\
+  2. In BricsCAD: APPLOAD, opencirt-<Version>.brx waehlen, laden
+     (Startup Suite: nach einem Versionswechsel den Eintrag umstellen)
+  3. Befehl: OPENCIRT (Kurzform OC)
+
+Weitere Dateien sind nicht noetig. Zum Umwandeln der GA-FL-Referenz (ODS)
+wird LibreOffice oder Excel gebraucht.
+
+Bis 1.7.3 hiess die Datei batchtool-<Version>.brx und enthielt zusaetzlich
+die Stapelverarbeitung (Text, Attribute, Layer, LISP). Die gibt es seit 2.0
+als eigenes Plugin batchTool (batchtool-<Version>.brx, Befehl BATCHTOOL).

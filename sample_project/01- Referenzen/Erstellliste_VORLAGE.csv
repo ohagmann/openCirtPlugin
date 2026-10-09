@@ -1,0 +1,6 @@
+﻿Vorlage:;Los:;ASP:;Gewerk:;Anlage:;Dateiname:;ERSTELLDATUM:;LPH:;ZEICHNUNGSNUMMER:;ORTSKENNZEICHEN:;BMK_NUMMERIERUNG:;OC_FUNKTIONSKOMMENTAR:;BEMERKUNG:;OC_ANLAGE:;OC_TEXT_Z1_S1:;OC_TEXT_Z1_S2:;OC_TEXT_Z2_S1:;OC_TEXT_Z2_S2:;OC_TEXT_Z3_S1:;OC_TEXT_Z3_S2:;OC_TEXT_Z4_S1:;OC_TEXT_Z4_S2:;OC_TEXT_Z5_S1:;OC_TEXT_Z5_S2:;OC_TEXT_Z6_S1:;OC_TEXT_Z6_S2:;OC_AKS;OC_BEZEICHNUNG;OC_REF_DP_#;OC_FCODE_DP_#;OC_FL_AKTIV_#;OC_INTEGRATIONSART_DP_#;OC_KOMMENTAR_DP_#;OC_INDEX_AENDERUNG_#;OC_DATUM_AENDERUNG_#;OC_AENDERUNG_#;OC_BEARBEITER_AENDERUNG_#
+OC_VORLAGE_DIN_A2_V14;;;;;0000 Projekt_Deckblatt_A;30.09.2026;LPH 3 [Entwurfsplanung];Projekt-Deckblatt;;NEUSTARTEN;;;;;;;;;;;;;;;;;;;;;;;;;;
+OC_VORLAGE_DIN_A2_HISTORIE_V1;;;;;AENDERUNGSHISTORIE;30.09.2026;LPH 3 [Entwurfsplanung];Änderungshistorie des Dokuments;;;;;;;;;;;;;;;;;;HISTORIE;;;;;;;A;30.09.26;Erstausgabe;Mustermann
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;B;01.10.26;Datenpunkte ergänzt;Mustermann
+OC_VORLAGE_DIN_A2_V14;Los 1;ASP01;GA;SSK-1000;SSK interne Datenpunkte;30.09.2026;LPH 3 [Entwurfsplanung];SSK interne Datenpunkte;E0_X_XXX;NEUSTARTEN;;;;;;;;;;;;;;;;;;;;;;;;;;
+OC_VORLAGE_DIN_A2_V14;Los 1;ASP01;RLT;TKA-1000;RLT_Hauptanlage;30.09.2026;LPH 3 [Entwurfsplanung];TKA-1000 Hauptanlage;E0_X_XXX;NEUSTARTEN;Beispielblatt - Symbole aus der Blockbibliothek einfügen;;;;;;;;;;;;;;;;;;;;;;;;;

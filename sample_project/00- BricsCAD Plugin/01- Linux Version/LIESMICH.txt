@@ -1,0 +1,26 @@
+opencirt-<Version>.lrx - openCirt fuer BricsCAD V26 unter Linux
+================================================================
+
+Stand: Version 2.0.0 (09.10.2026), gebaut gegen BricsCAD V26.2.07 (Qt 6.8.2)
+Der Dateiname traegt die Version, z.B. opencirt-2.0.0.lrx.
+
+Laden
+  1. Die Datei an einen festen Ort kopieren, z.B. ~/BricsCAD Plugins/
+  2. In BricsCAD: APPLOAD, opencirt-<Version>.lrx waehlen, laden
+     (Startup Suite: nach einem Versionswechsel den Eintrag umstellen)
+  3. Befehl: OPENCIRT (Kurzform OC)
+
+Weitere Dateien sind nicht noetig. Das Plugin benutzt die Qt-Bibliotheken,
+die BricsCAD mitbringt. Zum Umwandeln der GA-FL-Referenz (ODS) wird
+LibreOffice gebraucht (Paket, /opt, Flatpak oder im Suchpfad).
+
+Unter Linux laeuft alles wie unter Windows:
+  - Projekt aufbauen (Erstellliste)
+  - Projekt erstellen (Gesamtlauf), BAS konfigurieren
+  - Projekt bereinigen
+  - PDF publizieren mit Inhaltsverzeichnis
+  - IO-Liste / Datenpunktliste, Sensorliste
+
+Bis 1.7.3 hiess die Datei batchtool-<Version>.lrx und enthielt zusaetzlich
+die Stapelverarbeitung (Text, Attribute, Layer, LISP). Die gibt es seit 2.0
+als eigenes Plugin batchTool (batchtool-<Version>.lrx, Befehl BATCHTOOL).
