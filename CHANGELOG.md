@@ -29,7 +29,8 @@ Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei re
 - „PDF publizieren" auf dem erzeugten Projekt: Inhaltsverzeichnis (1 Seite, 4 Einträge), PDF mit 18 Seiten aus der Batch-Instanz, Abschlussmeldung wie bisher.
 - Protokoll des Gesamtlaufs ohne Zwischenschritte: 33 statt 43 Zeilen beim Beispielprojekt, Zahlen und Ergebnisse unverändert.
 - openCirt und batchTool 2.0.0 in einer BricsCAD-Sitzung geladen, beide Fenster geöffnet, batchTool entladen, openCirt erneut aufgerufen, batchTool erneut geladen: BricsCAD läuft weiter, beide Fenster bleiben.
-- Windows-Build steht aus.
+- Windows-Build am 2026-10-09 vom Anwender gebaut (MSVC 19.44, Qt 6.8.3): `opencirt-2.0.0.brx` liegt im Beispielprojekt; Plugin unter Windows geladen, Fenster geöffnet und bedient.
+- Projekt mit 1.809 Blättern (Linux, Anwender): „Projekt aufbauen" mit Erstellliste (817 Quellzeichnungen), Gesamtlauf und „PDF publizieren" mit 2.0.0; Referenz derselbe Ablauf mit 1.7.3 auf einer frischen Kopie des Ausgangsstands. Aufbau-Protokolle zeilengleich (20.454 Zeilen); alle 1.809 Blätter gleich: 810 Quellzeichnungen, 134 Deckblätter, 792 GA-FL, 26 Summen, 7 Projektblätter, 40 Inhaltsseiten – 1.586.740 Attribute ohne Abweichung in Wert, Einfügepunkt, Ausrichtungspunkt und Textmaß. PDF 1.809 Seiten.
 
 ## [1.7.3] - 2026-10-08
 
