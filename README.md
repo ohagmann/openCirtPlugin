@@ -63,6 +63,8 @@ external/
 
 Das SDK kann über das Bricsys Developer Network bezogen werden: https://www.bricsys.com/en-eu/developers
 
+Liegt das SDK an anderer Stelle (etwa ein gemeinsames für openCirt und batchTool), zeigt `BRX_SDK_DIR` darauf: als CMake-Variable (`cmake -DBRX_SDK_DIR=…`) oder als Umgebungsvariable. Unter Linux genügt auch eine Verknüpfung `external/brx_sdk`; unter Windows muss der Ordner kopiert sein oder `BRX_SDK_DIR` gesetzt werden.
+
 ## Build
 
 ```cmd

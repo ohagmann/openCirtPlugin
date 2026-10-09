@@ -1,13 +1,14 @@
 @echo off
 REM ===========================================================
 REM Clean Build - opencirt-<Version>.brx (Windows)
+REM   BRX SDK: external\brx_sdk oder Umgebungsvariable BRX_SDK_DIR
 REM ===========================================================
 
 cd /d "%~dp0"
 
 echo.
 echo ============================================================
-echo Clean Build - Qt 6.8+ Windows Header Fix
+echo Clean Build - opencirt-^<Version^>.brx (Windows)
 echo ============================================================
 echo.
 
