@@ -908,7 +908,7 @@ QStringList OpenCirtTab::hierarchieLevels(const QString& folderPath) const {
     // der Reihenfolge Los / ASP / Gewerk / Anlage an, die Namen kommen aus der
     // Erstellliste und werden so uebernommen, wie der Planer sie dort
     // eingetragen hat. Bis 1.7.1 galt nur ein Ordner als ASP-Ebene, dessen
-    // Name "ASP" oder "ISP" enthielt; eine Kennung wie "MUEK01" blieb damit
+    // Name "ASP" oder "ISP" enthielt; eine Kennung wie "ZE01" blieb damit
     // ohne ASP im Plankopf und in den Listen.
     QString root = projectPath(OpenCirtConfig::ZEICHNUNGEN_DIR);
     root.replace("\\", "/");
@@ -1725,8 +1725,8 @@ void OpenCirtTab::onSensorListeGenerate() {
                 e.bmk = dp.aks;
 
                 // BAS: Funktionscode am Ende entfernen
-                // BAS_DP z.B. "KOE46-ASP01-HZG-WPL-1010-U20.00.601-TVL-01-MW_01"
-                // BMK z.B. "TVL-01" -> BAS bis einschl. BMK: "KOE46-...-TVL-01"
+                // BAS_DP z.B. "GEB1-ASP01-HZG-WPL-1010-U01.00.001-TVL-01-MW_01"
+                // BMK z.B. "TVL-01" -> BAS bis einschl. BMK: "GEB1-...-TVL-01"
                 e.bas = dp.basString;
                 int bmkPos = e.bas.lastIndexOf(dp.aks);
                 if (bmkPos >= 0) {
