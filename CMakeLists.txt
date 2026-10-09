@@ -33,7 +33,17 @@ endif()
 # Die Vorgaben lassen sich ohne Aenderung dieser Datei ueberschreiben:
 #   cmake -DQT6_DIR=... -DBRICSCAD_DIR=... -DOC_SYSROOT=...
 # oder ueber gleichnamige Umgebungsvariablen (siehe CLEAN_BUILD.sh).
-set(BRX_SDK_PATH "${CMAKE_CURRENT_SOURCE_DIR}/external/brx_sdk")
+# BRX SDK: Vorgabe ist external/brx_sdk im Projekt. BRX_SDK_DIR (CMake-Variable
+# oder Umgebungsvariable) zeigt auf ein SDK an anderer Stelle, z.B. ein
+# gemeinsames fuer openCirt und batchTool.
+if(NOT DEFINED BRX_SDK_DIR AND DEFINED ENV{BRX_SDK_DIR})
+    set(BRX_SDK_DIR "$ENV{BRX_SDK_DIR}")
+endif()
+if(DEFINED BRX_SDK_DIR AND NOT "${BRX_SDK_DIR}" STREQUAL "")
+    set(BRX_SDK_PATH "${BRX_SDK_DIR}")
+else()
+    set(BRX_SDK_PATH "${CMAKE_CURRENT_SOURCE_DIR}/external/brx_sdk")
+endif()
 set(BRX_INC_DIR "${BRX_SDK_PATH}/inc")
 
 if(WIN32)
@@ -72,8 +82,8 @@ if(NOT WIN32)
 endif()
 
 # Prüfungen
-if(NOT EXISTS ${BRX_SDK_PATH})
-    message(FATAL_ERROR "BRX SDK not found at ${BRX_SDK_PATH}")
+if(NOT EXISTS "${BRX_SDK_PATH}/inc")
+    message(FATAL_ERROR "BRX SDK nicht gefunden: ${BRX_SDK_PATH}\nDas SDK (Ordner mit inc/ und lib64/) nach external/brx_sdk kopieren oder BRX_SDK_DIR setzen: cmake -DBRX_SDK_DIR=<Pfad> oder Umgebungsvariable BRX_SDK_DIR.")
 endif()
 
 if(NOT EXISTS ${QT6_DIR})
