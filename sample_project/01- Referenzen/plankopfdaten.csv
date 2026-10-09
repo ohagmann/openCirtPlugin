@@ -1,0 +1,18 @@
+Attributname;Wert;Erläuterung
+AN1;Auftragnehmer;Auftragnehmer Zeile 1
+AN2;Musterstraße 1;Auftragnehmer Zeile 2
+AN3;12345 | Musterhausen;Auftragnehmer Zeile 3
+AN4;Tel.: +49 (0) 1234 / 567 89 10;Auftragnehmer Zeile 4
+AN5;Email: info@musterfirma.de;Auftragnehmer Zeile 5
+AG1;Auftraggeberorganisation / Bauherr;Auftraggeber Zeile 1
+AG2;;Auftraggeber Zeile 2
+AG3;;Auftraggeber Zeile 3
+AG4;;Auftraggeber Zeile 4
+AG5;;Auftraggeber Zeile 5
+PR1;Sampleprojekt;Projekt Zeile 1
+PR2;Musterstraße 1;Projekt Zeile 2
+PR3;12345 | Musterstadt;Projekt Zeile 3
+PR4;;Projekt Zeile 4
+PR5;;Projekt Zeile 5
+ERSTELLER;Dein Name;Ersteller
+ERSTELLDATUM;30.03.2026;
