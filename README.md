@@ -25,6 +25,7 @@ Ein Fenster, oben der Projektordner, darunter die Funktionen:
 - **PDF publizieren** – Multi-Sheet-PDF mit Inhaltsverzeichnis
 - **IO-Liste erstellen** – Datenpunktliste bzw. IO-Belegungsliste als CSV
 - **Sensorliste erstellen** – Fühler und Sensoren aus den GA-FL-Daten als CSV
+- **Export Testdaten** – die fertigen GA-FL-Blätter als JSON für die automatisierte Prüfung von AKS/BAS und DP-Funktionen
 
 Das Protokoll im unteren Teil des Fensters ist die einzige Ausgabe; Dialoge erscheinen nur für Rückfragen, Fehler und die Zusammenfassung eines Laufs.
 
@@ -169,6 +170,7 @@ Die eigentliche Projekterstellung läuft über einen einzigen Knopf – Plankopf
 - **PDF publizieren** – DSD-basierter Multi-Sheet-PDF-Export inkl. Inhaltsverzeichnis (22 Einträge pro Seite, Plankopf aus `plankopfdaten.csv`). Das Plotten läuft in einer eigenen Batch-Instanz von BricsCAD
 - **IO-Liste erstellen** – Export als CSV-Datei nach `06- Plot` (Referenz: `iomodule.csv`). Im Dialog wird nach Integrationsart gefiltert (Attribut `OC_INTEGRATIONSART_DP_n`): leer = alle Datenpunkte (`Datenpunktliste.csv`), `HW` = SPS-/DDC-Belegungsliste mit Modul- und Kanalzuordnung (`IO-Belegungsliste.csv`), `BUS;SMI` = mehrere Arten (`Datenpunktliste_BUS-SMI.csv`). Die Integrationsart steht als eigene Spalte in der Liste; *Modul-Typ* wird nur für HW-Zeilen gefüllt
 - **Sensorliste erstellen** – Keyword-Matching gegen Blockattribute (Referenz: `sensor.csv`), Ausgabe als `Sensorliste.csv` nach `06- Plot`
+- **Export Testdaten** – liest die fertigen GA-FL-Blätter (gespeicherter Stand, ohne Editor) und schreibt je Blatt eine JSON-Datei nach `08- Tests/Test <JJJJ-MM-TT_hhmm>/01- JSON Dumps/`, im selben Format wie der frühere LISP-Dump `OC_GENDUMP`; dazu `manifest.json` im Lauf-Ordner (openCirt-Version, Zeitpunkt, Blattliste mit SHA-256). Geprüft wird danach mit `08- Tests/00- Engine/oc_audit_gafl.py`
 
 Die Listen sind CSV-Dateien in UTF-8 mit BOM, Trennzeichen Semikolon, Zeilenende CRLF. Zeile 1 ist die Kopfzeile. LibreOffice und Excel öffnen sie direkt; eine Vorlage ist nicht nötig.
 

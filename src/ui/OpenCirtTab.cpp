@@ -58,6 +58,10 @@
 #include <QLineEdit>
 #include <QFrame>
 #include <QListWidget>
+#include <QJsonArray>
+#include <QCryptographicHash>
+#include <QSysInfo>
+#include <algorithm>
 #include <QTreeWidget>
 #include <QHeaderView>
 #include <QAbstractItemView>
@@ -462,6 +466,15 @@ void OpenCirtTab::setupUi() {
         "Sensorliste erstellen",
         "Fuehler/Sensoren aus GA-FL-Daten als CSV-Datei exportieren");
 
+    m_btnTestdaten = createButtonRow(
+        "Export Testdaten",
+        "Zur automatisierten Testung von AKS / BAS Bezeichnern und DP-Funktionen");
+    m_btnTestdaten->setToolTip(
+        "Liest die fertigen GA-FL-Blaetter (gespeicherter Stand) und schreibt je Blatt\n"
+        "eine JSON-Datei nach '08- Tests/Test <Datum_Uhrzeit>/01- JSON Dumps'\n"
+        "(Format wie OC_GENDUMP), dazu manifest.json mit Version, Zeitpunkt und\n"
+        "Pruefsummen. Danach die Pruefung mit oc_audit_gafl.py starten.");
+
     mainLayout->addWidget(buttonGroup);
     
     // --- Progress Bar ---
@@ -481,6 +494,7 @@ void OpenCirtTab::setupUi() {
     connect(m_btnPublish, &QPushButton::clicked, this, &OpenCirtTab::onPublishPdf);
     connect(m_btnSensorliste, &QPushButton::clicked, this, &OpenCirtTab::onSensorListeGenerate);
     connect(m_btnDpExport, &QPushButton::clicked, this, &OpenCirtTab::onDatenpunktExport);
+    connect(m_btnTestdaten, &QPushButton::clicked, this, &OpenCirtTab::onTestdatenExport);
     connect(m_btnBasConfig, &QPushButton::clicked, this, &OpenCirtTab::onBasKonfigurieren);
     connect(m_btnBereinigen, &QPushButton::clicked, this, &OpenCirtTab::onProjektBereinigen);
     connect(m_btnProjektAufbau, &QPushButton::clicked, this, &OpenCirtTab::onProjektAufbauen);
@@ -558,15 +572,11 @@ bool copyTemplate(const QString& source, const QString& target) {
     return true;
 }
 
-}  // namespace
-
-bool OpenCirtTab::checkNoOpenDrawings(const QString& title) {
-    // Eine im Editor geoeffnete Zeichnung laesst sich nicht ersetzen. Frueher
-    // fiel das nicht auf, weil das Skript die Zeichnungen selbst im Editor
-    // oeffnete.
+/// Im Editor geoeffnete Zeichnungen unterhalb von dir (Pfade mit "/")
+QStringList openEditorDrawingsUnder(const QString& dir)
+{
     QStringList open;
-    const QString root =
-        QDir::fromNativeSeparators(projectPath(OpenCirtConfig::ZEICHNUNGEN_DIR)) + "/";
+    const QString root = QDir::fromNativeSeparators(dir) + "/";
     if (acDocManager) {
         AcApDocumentIterator* it = acDocManager->newAcApDocumentIterator();
         for (; it && !it->done(); it->step()) {
@@ -574,11 +584,23 @@ bool OpenCirtTab::checkNoOpenDrawings(const QString& title) {
             if (!doc || !doc->fileName()) continue;
             const QString path =
                 QDir::fromNativeSeparators(QString::fromWCharArray(doc->fileName()));
-            if (path.startsWith(root, Qt::CaseInsensitive)) {
-                open << QDir::toNativeSeparators(path);
-            }
+            if (path.startsWith(root, Qt::CaseInsensitive)) open << path;
         }
         delete it;
+    }
+    return open;
+}
+
+}  // namespace
+
+bool OpenCirtTab::checkNoOpenDrawings(const QString& title) {
+    // Eine im Editor geoeffnete Zeichnung laesst sich nicht ersetzen. Frueher
+    // fiel das nicht auf, weil das Skript die Zeichnungen selbst im Editor
+    // oeffnete.
+    QStringList open;
+    for (const QString& path :
+         openEditorDrawingsUnder(projectPath(OpenCirtConfig::ZEICHNUNGEN_DIR))) {
+        open << QDir::toNativeSeparators(path);
     }
     if (open.isEmpty()) return true;
 
@@ -734,6 +756,7 @@ void OpenCirtTab::updateButtonStates() {
     m_btnPublish->setEnabled(enabled);
     m_btnSensorliste->setEnabled(enabled);
     m_btnDpExport->setEnabled(enabled);
+    m_btnTestdaten->setEnabled(enabled);
     m_btnFullProject->setEnabled(enabled);
     m_btnBereinigen->setEnabled(enabled);
     m_btnBasConfig->setEnabled(enabled);
@@ -2487,6 +2510,309 @@ void OpenCirtTab::onDatenpunktExport() {
         .arg(zeilenInDatei).arg(totalRows).arg(reserveZeilen)
         .arg(matchedDp).arg(totalDp).arg(totalIo)
         .arg(summary).arg(outputPath));
+}
+
+// ============================================================================
+// Export Testdaten (Pruefdaten fuer OC_AUDIT_GA_FL)
+// ============================================================================
+//
+// Liest die fertigen GA-FL-Blaetter (gespeicherter Stand, nur lesend ueber die
+// Side-Database) und schreibt je Blatt eine JSON-Datei im Format von
+// oc_dump_gafl.lsp (OC_GENDUMP) nach
+//   08- Tests/Test <JJJJ-MM-TT_hhmm>/01- JSON Dumps/<Pfad mit "__">.json
+// Die Pruef-Engine oc_audit_gafl.py liest diese Dateien unveraendert und nimmt
+// den neuesten Lauf-Ordner. Daneben im Lauf-Ordner: manifest.json mit Version,
+// Zeitpunkt und der Liste der Blaetter samt SHA-256.
+
+#ifndef PLUGIN_VERSION
+#define PLUGIN_VERSION "unbekannt"
+#endif
+
+namespace {
+
+/// JSON-Zeichenkette nur aus ASCII: alles ausserhalb 0x20..0x7E als \uXXXX.
+/// So liest die Engine die Datei gleich, ob als cp1252 (wie die Dumps aus
+/// OC_GENDUMP) oder als UTF-8.
+QString jsonAscii(const QString& s)
+{
+    QString r = QStringLiteral("\"");
+    for (const QChar ch : s) {
+        const ushort u = ch.unicode();
+        if (u == '"')                  r += QStringLiteral("\\\"");
+        else if (u == '\\')            r += QStringLiteral("\\\\");
+        else if (u >= 0x20 && u < 0x7F) r += ch;
+        else r += QStringLiteral("\\u%1").arg(u, 4, 16, QLatin1Char('0'));
+    }
+    return r + QStringLiteral("\"");
+}
+
+/// Spaltenschluessel aus OC_<schluessel>_DP_<n> (oc-tag-mid), nur Ziffern und "_"
+QString gaFlColumnKey(const QString& tag, int n)
+{
+    const QString suffix = QStringLiteral("_DP_") + QString::number(n);
+    if (!tag.startsWith(QLatin1String("OC_")) || !tag.endsWith(suffix)
+        || tag.size() <= 3 + suffix.size()) {
+        return QString();
+    }
+    const QString key = tag.mid(3, tag.size() - 3 - suffix.size());
+    for (const QChar c : key) {
+        if (!(c >= QLatin1Char('0') && c <= QLatin1Char('9')) && c != QLatin1Char('_'))
+            return QString();
+    }
+    return key;
+}
+
+/// Reihenfolge der Spalten wie oc-colkey: a_b_c -> a*10000 + b*100 + c
+int gaFlColumnOrder(const QString& key)
+{
+    const QStringList p = key.split(QLatin1Char('_'));
+    auto part = [&](int i) { return i < p.size() ? p.at(i).toInt() : 0; };
+    return part(0) * 10000 + part(1) * 100 + part(2);
+}
+
+/// Ein GA-FL-Blatt als JSON wie oc-dump-gafl. rows = Zeilen (OC_AKS_DP_1..n),
+/// dps = davon Zeilen mit AKS.
+QString gaFlDumpJson(const QString& fileBase, const QMap<QString, QString>& a,
+                     int& rows, int& dps)
+{
+    QStringList cols;
+    for (auto it = a.constBegin(); it != a.constEnd(); ++it) {
+        const QString key = gaFlColumnKey(it.key(), 1);
+        if (!key.isEmpty()) cols << key;
+    }
+    std::stable_sort(cols.begin(), cols.end(), [](const QString& x, const QString& y) {
+        return gaFlColumnOrder(x) < gaFlColumnOrder(y);
+    });
+
+    rows = 0;
+    while (a.contains(QStringLiteral("OC_AKS_DP_") + QString::number(rows + 1))) ++rows;
+    dps = 0;
+
+    QString js = QStringLiteral("{\"file\":") + jsonAscii(fileBase)
+        + QStringLiteral(",\"block\":")
+        + jsonAscii(QString::fromLatin1(OpenCirtConfig::GA_FL_BLOCK_NAME))
+        + QStringLiteral(",\"anlage\":") + jsonAscii(a.value(QStringLiteral("OC_ANLAGE")))
+        + QStringLiteral(",\"gewerk\":") + jsonAscii(a.value(QStringLiteral("OC_GEWERK")))
+        + QStringLiteral(",\"cols\":[");
+    for (int i = 0; i < cols.size(); ++i) {
+        if (i) js += QLatin1Char(',');
+        js += jsonAscii(cols.at(i));
+    }
+    js += QStringLiteral("],\"sums\":{");
+    bool first = true;
+    for (int i = 1; i <= 58; ++i) {
+        const QString tag = QStringLiteral("OC_SUM_") + QString::number(i);
+        if (!a.contains(tag)) continue;
+        if (!first) js += QLatin1Char(',');
+        js += jsonAscii(QString::number(i)) + QLatin1Char(':') + jsonAscii(a.value(tag));
+        first = false;
+    }
+    js += QStringLiteral("},\"dps\":[");
+    for (int n = 1; n <= rows; ++n) {
+        const QString s = QString::number(n);
+        const QString aks = a.value(QStringLiteral("OC_AKS_DP_") + s);
+        if (!aks.trimmed().isEmpty()) ++dps;
+        if (n > 1) js += QLatin1Char(',');
+        js += QStringLiteral("{\"idx\":") + s
+            + QStringLiteral(",\"aks\":") + jsonAscii(aks)
+            + QStringLiteral(",\"bezeichnung\":")
+            + jsonAscii(a.value(QStringLiteral("OC_BEZEICHNUNG_DP_") + s))
+            + QStringLiteral(",\"integ\":") + jsonAscii(a.value(QStringLiteral("OC_INTEG_DP_") + s))
+            + QStringLiteral(",\"kommentar1\":")
+            + jsonAscii(a.value(QStringLiteral("OC_KOMMENTAR_1_DP_") + s))
+            + QStringLiteral(",\"kommentar2\":")
+            + jsonAscii(a.value(QStringLiteral("OC_KOMMENTAR_2_DP_") + s))
+            + QStringLiteral(",\"cells\":{");
+        bool firstCell = true;
+        for (auto it = a.constBegin(); it != a.constEnd(); ++it) {
+            if (it.value().isEmpty()) continue;
+            const QString key = gaFlColumnKey(it.key(), n);
+            if (key.isEmpty()) continue;
+            if (!firstCell) js += QLatin1Char(',');
+            js += jsonAscii(key) + QLatin1Char(':') + jsonAscii(it.value());
+            firstCell = false;
+        }
+        js += QStringLiteral("}}");
+    }
+    return js + QStringLiteral("]}");
+}
+
+}  // namespace
+
+void OpenCirtTab::onTestdatenExport() {
+    if (!requireProjectStructure()) return;
+
+    const QString title = QStringLiteral("Export Testdaten");
+    log("=== EXPORT TESTDATEN ===");
+
+    // --- 1. GA-FL-Blaetter einsammeln ---
+    const QString drawingsDir = projectPath(OpenCirtConfig::ZEICHNUNGEN_DIR);
+    const QDir drawingsRoot(drawingsDir);
+    QStringList gaFlFiles;
+    {
+        QDirIterator it(drawingsDir, QStringList() << "*_GA_FL_*.dwg", QDir::Files,
+                        QDirIterator::Subdirectories);
+        while (it.hasNext()) gaFlFiles << it.next();
+        gaFlFiles.sort(Qt::CaseInsensitive);
+    }
+    if (gaFlFiles.isEmpty()) {
+        reportError(title, "Keine GA-FL-Blaetter im Zeichnungsordner gefunden",
+            "Die Testdaten werden aus den fertigen Blaettern erzeugt - bitte zuerst "
+            "'Projekt erstellen' vollstaendig durchlaufen lassen.", false);
+        return;
+    }
+
+    // --- 2. Geoeffnete Blaetter: exportiert wird der gespeicherte Stand ---
+    QStringList openSheets;
+    for (const QString& path : openEditorDrawingsUnder(drawingsDir)) {
+        if (QFileInfo(path).fileName().contains(QLatin1String("_GA_FL_"), Qt::CaseInsensitive))
+            openSheets << drawingsRoot.relativeFilePath(path);
+    }
+    if (!openSheets.isEmpty()) {
+        const auto answer = QMessageBox::question(this, title,
+            QString("%1 GA-FL-Blatt/Blaetter sind in BricsCAD geoeffnet:\n\n%2\n\n"
+                    "Exportiert wird der gespeicherte Stand. Ungespeicherte "
+                    "Aenderungen fehlen in den Testdaten.\n\nTrotzdem exportieren?")
+                .arg(openSheets.size())
+                .arg(openSheets.mid(0, 10).join("\n")
+                     + (openSheets.size() > 10 ? QStringLiteral("\n...") : QString())),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes) {
+            log("Export Testdaten abgebrochen (geoeffnete GA-FL-Blaetter)");
+            return;
+        }
+    }
+
+    // --- 3. Lauf-Ordner 08- Tests/Test <JJJJ-MM-TT_hhmm>[_n] ---
+    const QDateTime now = QDateTime::currentDateTime();
+    const QString testsDir = projectPath(OpenCirtConfig::TESTS_DIR);
+    QString runName = QStringLiteral("Test ") + now.toString(QStringLiteral("yyyy-MM-dd_HHmm"));
+    for (int n = 2; QFileInfo::exists(testsDir + "/" + runName); ++n) {
+        runName = QStringLiteral("Test ") + now.toString(QStringLiteral("yyyy-MM-dd_HHmm"))
+                  + QStringLiteral("_") + QString::number(n);
+    }
+    const QString runDir = testsDir + "/" + runName;
+    const QString jsonDir = runDir + QStringLiteral("/01- JSON Dumps");
+    if (!QDir().mkpath(jsonDir)) {
+        reportError(title, "Lauf-Ordner nicht anlegbar: " + QDir::toNativeSeparators(jsonDir),
+                    QString(), false);
+        return;
+    }
+
+    // --- 4. Blaetter lesen und je Blatt eine JSON-Datei schreiben ---
+    showProgress(QString("%1 GA-FL-Blaetter lesen...").arg(gaFlFiles.size()));
+    QJsonArray sheetList;
+    QStringList unreadable, withoutBlock, writeErrors;
+    int exported = 0, totalRows = 0, totalDps = 0, sheetNr = 0;
+
+    for (const QString& sheetPath : gaFlFiles) {
+        if (++sheetNr % 20 == 0) {
+            showProgress(QString("GA-FL lesen: %1 von %2 Blaettern")
+                         .arg(sheetNr).arg(gaFlFiles.size()));
+        }
+        const QString rel = drawingsRoot.relativeFilePath(sheetPath);
+        const SheetAttributes sa = readSheetAttributes(
+            sheetPath, QString::fromLatin1(OpenCirtConfig::GA_FL_BLOCK_NAME));
+        if (!sa.ok) { unreadable << rel; continue; }
+        if (sa.gaFl.isEmpty()) { withoutBlock << rel; continue; }
+
+        QString jsonName = rel;
+        jsonName.replace(QLatin1Char('/'), QStringLiteral("__"));
+        if (jsonName.endsWith(QLatin1String(".dwg"), Qt::CaseInsensitive)) jsonName.chop(4);
+        jsonName += QStringLiteral(".json");
+
+        int rows = 0, dps = 0;
+        const QString js = gaFlDumpJson(QFileInfo(sheetPath).completeBaseName(), sa.gaFl,
+                                        rows, dps);
+        QFile out(jsonDir + "/" + jsonName);
+        if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)
+            || out.write(js.toLatin1() + '\n') < 0) {
+            writeErrors << jsonName;
+            continue;
+        }
+        out.close();
+
+        QString sha;
+        QFile dwg(sheetPath);
+        if (dwg.open(QIODevice::ReadOnly)) {
+            QCryptographicHash hash(QCryptographicHash::Sha256);
+            hash.addData(&dwg);
+            sha = QString::fromLatin1(hash.result().toHex());
+        }
+        const QFileInfo fi(sheetPath);
+        QJsonObject entry;
+        entry["zeichnung"] = rel;
+        entry["json"] = jsonName;
+        entry["zeilen"] = rows;
+        entry["datenpunkte"] = dps;
+        entry["groesse"] = static_cast<double>(fi.size());
+        entry["geaendert"] = fi.lastModified().toString(Qt::ISODate);
+        entry["sha256"] = sha;
+        sheetList.append(entry);
+
+        ++exported;
+        totalRows += rows;
+        totalDps += dps;
+    }
+    hideProgress();
+
+    // --- 5. manifest.json im Lauf-Ordner (nicht bei den Dumps: die Engine liest dort jede *.json) ---
+    QJsonObject manifest;
+    manifest["art"] = QStringLiteral("openCirt Export Testdaten");
+    manifest["opencirt"] = QStringLiteral(PLUGIN_VERSION);
+    manifest["erzeugt"] = now.toOffsetFromUtc(now.offsetFromUtc()).toString(Qt::ISODate);
+    manifest["system"] = QSysInfo::prettyProductName();
+    manifest["projekt"] = QDir::toNativeSeparators(m_projectRoot);
+    manifest["zeichnungen"] = QString::fromLatin1(OpenCirtConfig::ZEICHNUNGEN_DIR);
+    manifest["ga_fl_block"] = QString::fromLatin1(OpenCirtConfig::GA_FL_BLOCK_NAME);
+    manifest["blaetter_gefunden"] = gaFlFiles.size();
+    manifest["blaetter_exportiert"] = exported;
+    manifest["zeilen"] = totalRows;
+    manifest["datenpunkte"] = totalDps;
+    manifest["geoeffnet"] = QJsonArray::fromStringList(openSheets);
+    manifest["nicht_lesbar"] = QJsonArray::fromStringList(unreadable);
+    manifest["ohne_ga_fl_block"] = QJsonArray::fromStringList(withoutBlock);
+    manifest["schreibfehler"] = QJsonArray::fromStringList(writeErrors);
+    manifest["blaetter"] = sheetList;
+    {
+        QFile mf(runDir + QStringLiteral("/manifest.json"));
+        if (!mf.open(QIODevice::WriteOnly | QIODevice::Truncate)
+            || mf.write(QJsonDocument(manifest).toJson(QJsonDocument::Indented)) < 0) {
+            logError("manifest.json nicht schreibbar: " + QDir::toNativeSeparators(mf.fileName()));
+        }
+    }
+
+    // --- 6. Ergebnis ---
+    QStringList problems;
+    for (const QString& f : unreadable)   problems << "nicht lesbar: " + f;
+    for (const QString& f : withoutBlock) problems << "ohne GA-FL-Block: " + f;
+    for (const QString& f : writeErrors)  problems << "nicht geschrieben: " + f;
+    for (const QString& p : problems) logError("  " + p);
+
+    const QString result = QString("Testdaten exportiert: %1 von %2 GA-FL-Blaettern, "
+                                   "%3 Datenpunkte -> %4")
+        .arg(exported).arg(gaFlFiles.size()).arg(totalDps)
+        .arg(QDir::toNativeSeparators(jsonDir));
+    if (problems.isEmpty()) logSuccess(result);
+    else logError(result);
+
+    const QString hint =
+        QString("Pruefung: oc_audit_gafl.py in '%1/00- Engine' starten, "
+                "sie nimmt den neuesten Lauf-Ordner.")
+        .arg(QString::fromLatin1(OpenCirtConfig::TESTS_DIR));
+    if (!problems.isEmpty()) {
+        showListWarning(this, title,
+            QString("%1 von %2 GA-FL-Blaettern exportiert. Nicht exportiert:")
+                .arg(exported).arg(gaFlFiles.size()),
+            problems,
+            "Die uebrigen Blaetter liegen in " + QDir::toNativeSeparators(jsonDir) + ".\n\n" + hint);
+        return;
+    }
+    QMessageBox::information(this, title,
+        QString("Export erfolgreich!\n\n"
+                "%1 GA-FL-Blaetter, %2 Datenpunkte\n\n"
+                "Ausgabe: %3\n\n%4")
+        .arg(exported).arg(totalDps).arg(QDir::toNativeSeparators(runDir)).arg(hint));
 }
 
 // ============================================================================

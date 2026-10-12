@@ -100,6 +100,7 @@ struct OpenCirtConfig {
     static constexpr const char* SKRIPTE_DIR = "02- Skripte";
     static constexpr const char* VORLAGEN_DIR = "04- Vorlagen";
     static constexpr const char* ZEICHNUNGEN_DIR = "05- Projekt Zeichnungen";
+    static constexpr const char* TESTS_DIR = "08- Tests";
     
     // Fixed filenames
     static constexpr const char* BAS_CSV = "BAS.csv";
@@ -163,6 +164,10 @@ private slots:
     void onPublishPdf();
     void onSensorListeGenerate();
     void onDatenpunktExport();
+
+    /// "Export Testdaten": fertige GA-FL-Blaetter als JSON fuer die
+    /// Pruef-Engine (08- Tests/00- Engine/oc_audit_gafl.py)
+    void onTestdatenExport();
 
     /// Dialog "BAS konfigurieren": Aufbau des BAS bearbeiten, BAS.csv schreiben
     void onBasKonfigurieren();
@@ -461,6 +466,7 @@ private:
     QPushButton* m_btnPublish;
     QPushButton* m_btnSensorliste;
     QPushButton* m_btnDpExport;
+    QPushButton* m_btnTestdaten = nullptr;   ///< "Export Testdaten"
     QPushButton* m_btnBereinigen;
     QPushButton* m_btnBasConfig = nullptr;   ///< "BAS konfigurieren"
     

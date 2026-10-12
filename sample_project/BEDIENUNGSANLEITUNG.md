@@ -527,6 +527,15 @@ Zeichnungen des Projekts dürfen während des Laufs nicht in BricsCAD geöffnet 
 
 Auf **„Projekt erstellen"** klicken und die Warnung bestätigen. Der Prozess läuft vollautomatisch; solange er läuft, nimmt das Plugin-Fenster keine Eingaben an. Am Ende nennt eine Meldung Stückzahlen, Fehler und Dauer.
 
+### Export Testdaten
+
+**„Export Testdaten"** liefert die Daten für die automatisierte Prüfung von AKS/BAS-Bezeichnern und DP-Funktionen (`08- Tests/00- Engine/oc_audit_gafl.py`). Gelesen werden die fertigen GA-FL-Blätter, so wie sie gespeichert sind – auch mit Korrekturen von Hand. Die Blätter werden dabei nicht geöffnet und nicht verändert.
+
+- Ausgabe: `08- Tests/Test <JJJJ-MM-TT_hhmm>/01- JSON Dumps/`, eine JSON-Datei je GA-FL-Blatt (Name = Pfad unter `05- Projekt Zeichnungen` mit `__` statt `/`).
+- Daneben `manifest.json`: openCirt-Version, Zeitpunkt, System und die Liste der Blätter mit Größe, Änderungszeit und SHA-256 – so lässt sich jeder Prüfbericht einem Stand zuordnen.
+- Ist ein GA-FL-Blatt in BricsCAD geöffnet, fragt das Plugin vorher nach: exportiert wird der gespeicherte Stand.
+- Die Prüf-Engine nimmt ohne weitere Angabe den neuesten Lauf-Ordner.
+
 ---
 
 ## 12. Tipps und Fehlerbehebung

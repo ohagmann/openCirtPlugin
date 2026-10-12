@@ -5,6 +5,20 @@ Alle wesentlichen Änderungen am openCirt-Plugin werden in dieser Datei dokument
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei reinen Änderungen an Vorlagen, LISP-Skripten, Dokumentation oder Repo-Konfiguration.
 
+## [2.1.0] - 2026-10-12
+
+### Added
+- **Export Testdaten.** Neue Schaltfläche „Export Testdaten" (Zur automatisierten Testung von AKS / BAS Bezeichnern und DP-Funktionen). Sie liest die fertigen GA-FL-Blätter – den gespeicherten Stand, nur lesend und ohne Editor – und schreibt je Blatt eine JSON-Datei nach `08- Tests/Test <JJJJ-MM-TT_hhmm>/01- JSON Dumps/`. Format und Dateinamen sind dieselben wie beim LISP-Dump `oc_dump_gafl.lsp`/`OC_GENDUMP`, die Prüf-Engine `oc_audit_gafl.py` liest sie unverändert. Daneben liegt `manifest.json` mit openCirt-Version, Zeitpunkt, System und der Blattliste (Größe, Änderungszeit, SHA-256, nicht lesbare Blätter). Damit braucht der Dump weder LISP noch einen Ordnerdialog und läuft unter Windows und Linux gleich; der LISP-Weg scheiterte unter Linux an der Windows-Ordnerauswahl und am LISP-Heap ab dem dritten Dokument. Sind GA-FL-Blätter in BricsCAD geöffnet, fragt das Plugin vorher nach.
+
+### Technisches
+- Die Suche nach im Editor geöffneten Projektzeichnungen ist als `openEditorDrawingsUnder()` aus `checkNoOpenDrawings()` herausgezogen und wird von beiden Funktionen benutzt.
+- Die Testdaten-JSON enthält nur ASCII (andere Zeichen als `\uXXXX`), damit die Engine sie wie die cp1252-Dateien aus `OC_GENDUMP` und ebenso als UTF-8 lesen kann.
+
+### Geprüft
+- Projekt mit 173 GA-FL-Blättern (917 Datenpunkte, 4.325 Zeilen), Export unter Linux (Linux Mint 22.3) und Windows (Windows 11 25H2, Build des Anwenders) auf demselben Stand (SHA-256 aller Blätter in beiden `manifest.json` gleich): alle 173 JSON-Dateien byte-gleich, Dateinamen gleich denen eines früheren `OC_GENDUMP`-Laufs.
+- Inhalt je Blatt gleich dem LISP-Dump `oc-dump-gafl` desselben Stands (173/173, Referenz unter Linux mit einer BricsCAD-Instanz je Blatt erzeugt).
+- `oc_audit_gafl.py` liest die Dateien ohne Anpassung; die Prüfberichte zum Windows- und zum Linux-Export sind identisch. Export unter Linux in rund 9 s.
+
 ## [2.0.0] - 2026-10-09
 
 ### Changed
