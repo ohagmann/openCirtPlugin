@@ -1,10 +1,12 @@
-opencirt-<Version>-v<NN>.brx - openCirt fuer BricsCAD V27 und V26 unter Windows
-===============================================================================
+opencirt-<Version>-v27.brx - openCirt fuer BricsCAD V27 unter Windows
+======================================================================
 
+Stand: Version 2.2.0 (21.10.2026)
   opencirt-2.2.0-v27.brx  fuer BricsCAD V27
-  opencirt-2.2.0-v26.brx  fuer BricsCAD V26
 Ein Plugin laedt nur in der BricsCAD-Version, fuer die es gebaut ist.
 Der Dateiname traegt beide Versionen, z.B. opencirt-2.2.0-v27.brx.
+Fuer BricsCAD V26 gibt es keine fertige Datei mehr: openCirt 2.1.0
+weiter benutzen oder selbst bauen (CLEAN_BUILD.bat 26, siehe README).
 
 Laden
   1. Die Datei an einen festen Ort kopieren, z.B. C:\BricsCAD Plugins\

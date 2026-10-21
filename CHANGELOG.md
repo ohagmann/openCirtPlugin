@@ -8,10 +8,13 @@ Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei re
 ## [2.2.0] - 2026-10-21
 
 ### Added
-- **BricsCAD V27.** openCirt wird für BricsCAD V27 gebaut und weiterhin für V26. Ein Plugin lädt nur in der BricsCAD-Version, für die es gebaut ist; deshalb steht die Version im Dateinamen: `opencirt-2.2.0-v27.lrx/.brx` für V27, `opencirt-2.2.0-v26.lrx/.brx` für V26. Im Beispielprojekt liegen beide. Der Über-Dialog nennt die BricsCAD-Version des Builds.
+- **BricsCAD V27.** openCirt 2.2.0 gibt es fertig nur für BricsCAD V27: `opencirt-2.2.0-v27.lrx` (Linux) und `opencirt-2.2.0-v27.brx` (Windows) im Beispielprojekt. Ein Plugin lädt nur in der BricsCAD-Version, für die es gebaut ist; deshalb steht die Version im Dateinamen. Für V26 bleibt openCirt 2.1.0, oder man baut selbst mit `CLEAN_BUILD.sh 26` bzw. `CLEAN_BUILD.bat 26` (unter Linux geprüft, siehe unten). Der Über-Dialog nennt die BricsCAD-Version des Builds.
 
 ### Changed
 - **PDF publizieren: Speicherort und Dateiname im Dialog.** Der Dialog „PDF publizieren" fragt jedes Mal Ordner (mit „Durchsuchen…", die Auswahl beginnt im `06- Plot` des Projekts) und Dateinamen ab – ohne Vorgabe, openCirt merkt sich nichts. Ohne Endung wird `.pdf` ergänzt. Gibt es die Datei schon, fragt openCirt im Dialog, ob sie ersetzt werden soll; bei „Ja" wird sie vor dem Start gelöscht, bei „Nein" geht es zurück in den Dialog. Lässt sie sich nicht löschen (z. B. in einem PDF-Betrachter geöffnet), bricht der Publish mit einer Meldung ab. BricsCAD schreibt die PDF ohne weitere Rückfrage genau dorthin (Ziel und `PromptForDwfName=FALSE` stehen in der DSD), und die Erfolgsmeldung nennt diese Datei. Bisher ging die PDF immer nach `06- Plot/<Projektordner>.pdf`, und Dateiname und Ordner fragte die zweite BricsCAD-Instanz ab.
+
+### Removed
+- Fertige Dateien für BricsCAD V26: `opencirt-2.1.0.brx` (Windows) liegt nicht mehr im Beispielprojekt, eine 2.2.0 für V26 gibt es nicht als fertige Datei.
 
 ### Technisches
 - Build: Die BricsCAD-Version wählt `BRICSCAD_VERSION` (26 oder 27, Vorgabe 27) als CMake- oder Umgebungsvariable, oder das Argument von `CLEAN_BUILD.sh 26` bzw. `CLEAN_BUILD.bat 26`. Davon hängen ab: der SDK-Ordner `external/brx_sdk_v<NN>` (sonst `external/brx_sdk`), die Bibliotheken `brx<NN>`, die Vorgaben für Qt (V26: 6.8.2 unter Linux, 6.8.3 unter Windows; V27: 6.10.2 unter Linux, 6.10.3 unter Windows – V27 bringt auf beiden Systemen 6.10.2 mit, Patch-Versionen derselben Reihe sind binärkompatibel) und für die Installation. CMake prüft an `brx_version.h`, ob das SDK zur gewählten Version gehört, und warnt unter Linux, wenn die Qt-Version nicht zu der von BricsCAD passt.
@@ -22,7 +25,7 @@ Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei re
 ### Geprüft (Linux)
 - Beispielprojekt (Projekt erstellen, IO-Liste, PDF publizieren) und Erstellliste-Vorlage (Projekt aufbauen, Projekt erstellen, PDF publizieren), jeweils mit `opencirt-2.2.0-v26.lrx` in BricsCAD V26.2.08 und mit `opencirt-2.2.0-v27.lrx` in V27.1.05 auf frischen Kopien desselben Stands: Auszüge aller Blätter gleich (11 Blätter mit 8.930 bzw. 751 Attributen; Werte, Einfügepunkte, Ausrichtungspunkte, Textmaße), IO-Belegungsliste byte-gleich, Log des Projektaufbaus zeilengleich, PDF (11 Seiten) nach Wortbestand, Lage und Pixeln gleich. Die Linux-Korrektur der Textausrichtung (`adjustTextAlignment`) wirkt in V27 unverändert.
 - PDF publizieren mit dem neuen Dialog unter V26 und V27: Die Felder sind leer, in den Einstellungen wird nichts gespeichert. Die Batch-Instanz schreibt die PDF ohne Rückfrage an den gewählten Ort und beendet sich, die Erfolgsmeldung nennt die Datei. Zweiter Publish auf dieselbe Datei: openCirt fragt „PDF ersetzen", nach „Ja" läuft der Publish durch (vorher wartete die Batch-Instanz auf ihre eigene Rückfrage); nach „Nein" kommt der Dialog zurück, nach „Abbrechen" startet nichts und die PDF bleibt unverändert.
-- Windows-Build für V27 am 2026-10-21 vom Anwender gebaut (MSVC 14.44, Qt 6.10.3): `opencirt-2.2.0-v27.brx` liegt im Beispielprojekt (bindet `brx27.dll` und Qt6 ein). Der Windows-Build für V26 steht aus.
+- Windows-Build für V27 am 2026-10-21 vom Anwender gebaut (MSVC 14.44, Qt 6.10.3): `opencirt-2.2.0-v27.brx` liegt im Beispielprojekt (bindet `brx27.dll` und Qt6 ein).
 
 ## [2.1.0] - 2026-10-12
 

@@ -2,7 +2,7 @@
 
 **Version:** 2.2  
 **Stand:** Oktober 2026  
-**Für:** BricsCAD V27 oder V26 mit dem openCirt-Plugin ab Version 2.2
+**Für:** BricsCAD V27 mit dem openCirt-Plugin ab Version 2.2 (BricsCAD V26: openCirt 2.1)
 
 ---
 
@@ -43,7 +43,7 @@ Der gesamte Ablauf von der Schema-Zeichnung bis zum fertigen PDF-Planungspaket i
 
 ### 2.1 Plugin laden
 
-1. Die Datei `opencirt-<Version>-v<NN>.brx` für die eigene BricsCAD-Version (z.B. `opencirt-2.2.0-v27.brx` für V27, `opencirt-2.2.0-v26.brx` für V26) aus dem Ordner `00- BricsCAD Plugin/00- Windows Version/` in einen festen Speicherort kopieren (z.B. `C:\BricsCAD Plugins\`). Ein Plugin lädt nur in der BricsCAD-Version, für die es gebaut ist.
+1. Die Datei `opencirt-<Version>-v27.brx` (z.B. `opencirt-2.2.0-v27.brx`) aus dem Ordner `00- BricsCAD Plugin/00- Windows Version/` in einen festen Speicherort kopieren (z.B. `C:\BricsCAD Plugins\`). Ein Plugin lädt nur in der BricsCAD-Version, für die es gebaut ist; fertige Dateien gibt es nur für V27.
 2. BricsCAD starten.
 3. Befehl `APPLOAD` eingeben.
 4. Zur Datei `opencirt-<Version>-v<NN>.brx` navigieren und „Laden" klicken.
@@ -57,7 +57,7 @@ Der gesamte Ablauf von der Schema-Zeichnung bis zum fertigen PDF-Planungspaket i
 2. Unten auf „Inhalt..." (Startup Suite) klicken.
 3. `opencirt-<Version>-v<NN>.brx` (Linux: `opencirt-<Version>-v<NN>.lrx`) zur Startup Suite hinzufügen.
 
-Der Dateiname trägt die Version des Plugins und die BricsCAD-Version. Nach einem Versionswechsel den Eintrag in der Startup Suite auf die neue Datei umstellen; die alte Datei kann weg. Jede BricsCAD-Version hat ihre eigene Startup Suite – wer V26 und V27 nebeneinander nutzt, trägt in jeder die passende Datei ein.
+Der Dateiname trägt die Version des Plugins und die BricsCAD-Version. Nach einem Versionswechsel den Eintrag in der Startup Suite auf die neue Datei umstellen; die alte Datei kann weg. Jede BricsCAD-Version hat ihre eigene Startup Suite – wer V26 und V27 nebeneinander nutzt, trägt in jeder die passende Datei ein (in V26 openCirt 2.1).
 
 ### 2.3 Plugin öffnen
 

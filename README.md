@@ -1,6 +1,6 @@
 # openCirt – GA-Planungssoftware für BricsCAD
 
-Ein BRX-Plugin (C++/Qt6) zur Erstellung von Planungsunterlagen für die Gebäudeautomation (nach VDI 3814) in BricsCAD V27 und V26 unter Windows und Linux. Aus Schema-Zeichnungen mit standardisierten Symbolen entstehen Betriebsmittelkennzeichen, BAS-Adressen, GA-Funktionslisten, Summenblätter, Deckblätter, Inhaltsverzeichnis, Datenpunkt- und Sensorlisten und das PDF-Gesamtdokument – aus einem Fenster heraus, ohne die Zeichnungen einzeln zu öffnen. openCirt ist DIE freie GA-Planungssoftware für alle - kostenlos, hocheffizient und einfach zu bedienen.
+Ein BRX-Plugin (C++/Qt6) zur Erstellung von Planungsunterlagen für die Gebäudeautomation (nach VDI 3814) in BricsCAD V27 unter Windows und Linux. Aus Schema-Zeichnungen mit standardisierten Symbolen entstehen Betriebsmittelkennzeichen, BAS-Adressen, GA-Funktionslisten, Summenblätter, Deckblätter, Inhaltsverzeichnis, Datenpunkt- und Sensorlisten und das PDF-Gesamtdokument – aus einem Fenster heraus, ohne die Zeichnungen einzeln zu öffnen. openCirt ist DIE freie GA-Planungssoftware für alle - kostenlos, hocheffizient und einfach zu bedienen.
 
 Bis Version 1.7.3 war openCirt ein Tab im Plugin batchTool/openCirt. Seit 2.0.0 sind es zwei Plugins: **openCirt** (dieses Repository) und **[batchTool](https://github.com/ohagmann/batchToolPlugin)** für die Stapelverarbeitung beliebiger DWG-Dateien (Text, Attribute, Layer, LISP). Beide lassen sich gleichzeitig in BricsCAD laden.
 
@@ -71,7 +71,7 @@ Liegt das SDK an anderer Stelle (etwa ein gemeinsames für openCirt und batchToo
 
 ### BricsCAD-Version
 
-Ein Plugin lädt nur in der BricsCAD-Version, für deren SDK es gebaut ist. Gebaut wird für **V27**; für V26 mit dem Argument `26` (`CLEAN_BUILD.bat 26`, `./CLEAN_BUILD.sh 26`) oder mit `BRICSCAD_VERSION=26` (CMake-Variable oder Umgebungsvariable). Die Version steht im Dateinamen, z. B. `opencirt-<Version>-v27.brx` und `opencirt-<Version>-v26.brx`.
+Ein Plugin lädt nur in der BricsCAD-Version, für deren SDK es gebaut ist. Gebaut wird für **V27**; für V26 mit dem Argument `26` (`CLEAN_BUILD.bat 26`, `./CLEAN_BUILD.sh 26`) oder mit `BRICSCAD_VERSION=26` (CMake-Variable oder Umgebungsvariable). Die Version steht im Dateinamen, z. B. `opencirt-<Version>-v27.brx` und `opencirt-<Version>-v26.brx`. Fertige Dateien gibt es ab 2.2.0 nur für V27; wer V26 braucht, baut selbst mit dem Argument `26` oder bleibt bei 2.1.0.
 
 ## Build
 
@@ -261,4 +261,4 @@ Kurzfassung: Nutzung für interne Zwecke, kommerzielle Projekte und Dienstleistu
 
 ## Technologie
 
-Entwickelt mit BRX SDK V27 und V26, Qt 6, C++17, CMake.
+Entwickelt mit BRX SDK V27, Qt 6, C++17, CMake.
