@@ -411,8 +411,10 @@ private:
     /// Collect all DWGs in correct order for publishing
     QStringList collectOrderedDwgsForPublish();
     
-    /// Generate DSD file for PUBLISH command
-    QString generateDsdFile(const QStringList& orderedDwgs);
+    /// Generate DSD file for PUBLISH command. The output (folder, file name)
+    /// is written into [Target]; together with PromptForDwfName=FALSE in
+    /// [SheetSet Properties] BricsCAD publishes without asking for the file.
+    QString generateDsdFile(const QStringList& orderedDwgs, const QString& outDir, const QString& outName);
     
     /// Find the Inhaltsverzeichnis sheet template DWG (22 rows preplaced)
     QString findInhaltVorlage();
@@ -430,8 +432,14 @@ private:
     /// Timer callback: poll for PDF publish completion marker
     void onPdfDonePollTimer();
     
+    /// Ask for the PDF output (folder, file name). outDir/outName carry the
+    /// defaults (last stored values, else 06- Plot / project folder name);
+    /// on return they are normalized (folder exists, name ends with .pdf).
+    /// false if canceled.
+    bool askPublishTarget(int sheetCount, int tocPageCount, QString& outDir, QString& outName);
+    
     /// Launch BricsCAD PDF publish with DSD file
-    void launchPublish(const QStringList& orderedDwgs);
+    void launchPublish(const QStringList& orderedDwgs, const QString& outDir, const QString& outName);
     
 
     // ================================================================
@@ -515,7 +523,8 @@ private:
     // PDF publish completion polling (via /b batch instance + marker file)
     QTimer* m_pdfDoneTimer = nullptr;   ///< Polls for publish-done marker
     QString m_pdfDoneMarkerPath;        ///< Path to completion marker written by SCR
-    QString m_publishedPdfPath;         ///< Path to the output PDF (from DSD, for success message)
+    QString m_publishedPdfPath;         ///< Vergabener Ausgabe-PDF (steht in der DSD, wird ueberwacht)
+    int m_pdfWaitPolls = 0;             ///< geduldete Polls, bis die Datei auf der Platte liegt
 
 };
 

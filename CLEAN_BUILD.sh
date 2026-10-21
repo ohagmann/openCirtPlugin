@@ -32,6 +32,11 @@ OC_TOOLCHAIN="${OC_TOOLCHAIN:-$HOME/.local/opt/opencirt-toolchain}"
 if [ -d "$OC_TOOLCHAIN/venv/bin" ]; then
     export PATH="$OC_TOOLCHAIN/venv/bin:$PATH"
 fi
+# Lokale, nicht getrackte Uebersteuerung fuer diesen Rechner (z.B.
+# OC_PLUGIN_DEST); local_env.sh liegt in .gitignore und kommt nicht ins Repo.
+if [ -f "$ROOT/local_env.sh" ]; then
+    . "$ROOT/local_env.sh"
+fi
 for tool in cmake ninja c++; do
     if ! command -v "$tool" >/dev/null 2>&1; then
         echo "BUILD ABGEBROCHEN - '$tool' nicht gefunden."
@@ -84,6 +89,9 @@ LRX=$(ls -1 "$BUILD_DIR"/Release/opencirt-*.lrx 2>/dev/null | head -1)
 echo "Ausgabe: ${LRX#$ROOT/}"
 ls -l "$LRX"
 echo "Kopie im Beispielprojekt: sample_project/00- BricsCAD Plugin/01- Linux Version/$(basename "$LRX")"
+if [ -n "${OC_PLUGIN_DEST:-}" ] && [ -d "$OC_PLUGIN_DEST" ]; then
+    echo "Kopie zusätzlich nach: $OC_PLUGIN_DEST/$(basename "$LRX")"
+fi
 echo
 echo "Laden in BricsCAD: APPLOAD, dann $(basename "$LRX") waehlen. Befehl: OPENCIRT (Kurzform OC)"
 echo "Steht die Datei in der Startup Suite, dort den Eintrag auf die neue Version umstellen."

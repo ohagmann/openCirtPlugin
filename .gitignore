@@ -83,4 +83,7 @@ Desktop.ini
 *.old
 *.orig
 
+# Lokale, rechnerbezogene Build-Uebersteuerung (Pfade wie OC_PLUGIN_DEST)
+local_env.sh
+
 build_linux/

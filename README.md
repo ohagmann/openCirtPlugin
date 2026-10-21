@@ -117,6 +117,7 @@ Die Vorgaben stehen in der Root-`CMakeLists.txt`:
 | `QT6_DIR` | `C:/Qt/6.8.3/msvc2022_64` | `~/.local/opt/opencirt-toolchain/Qt/6.8.2/gcc_64` |
 | `BRICSCAD_DIR` | `C:/Program Files/Bricsys/BricsCAD V26 de_DE` | `/opt/bricsys/bricscad/v26` |
 | `OC_SYSROOT` | – | `~/.local/opt/opencirt-toolchain/sysroot` (optional) |
+| `OC_PLUGIN_DEST` | – (keine zusätzliche Kopie) | – (optional, z. B. über die lokale `local_env.sh`) |
 
 Abweichende Pfade lassen sich ohne Änderung der Datei setzen: beim Aufruf mit `cmake -DQT6_DIR=… -DBRICSCAD_DIR=…` oder über gleichnamige Umgebungsvariablen.
 
@@ -188,7 +189,7 @@ Die Bedienungsanleitung mit Projektstruktur, Erstellliste, Symbolen und allen Sc
 │   └── DEVELOPMENT.md          Entwickler-Hinweise
 ├── tools/
 │   ├── Close-BricsCAD.ps1      Beendet BricsCAD vor dem Build (Windows)
-│   ├── copy_plugin.cmake       Legt das fertige Plugin ins Beispielprojekt
+│   ├── copy_plugin.cmake       Legt das fertige Plugin ins Beispielprojekt (ggf. zusätzlich nach OC_PLUGIN_DEST)
 │   └── oc_summen_vergleich.py  Prüfwerkzeug für Summenblätter
 ├── external/
 │   └── brx_sdk/                BRX SDK (nicht im Repository)

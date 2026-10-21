@@ -359,6 +359,17 @@ else()
 endif()
 set(_oc_module_name "opencirt-${PROJECT_VERSION}")
 
+# Optional: fertige Fassung zusätzlich an ein zweites Ziel ablegen (z.B.
+# Projektordner). OC_PLUGIN_DEST wird als CMake-Variable oder Umgebungsvariable
+# gesetzt (CLEAN_BUILD.sh liest sie unter anderem aus der lokalen, nicht
+# getrackten local_env.sh); leer oder fehlender Ordner = zweites Ziel entfaellt.
+if(NOT DEFINED OC_PLUGIN_DEST AND DEFINED ENV{OC_PLUGIN_DEST})
+    set(OC_PLUGIN_DEST "$ENV{OC_PLUGIN_DEST}")
+endif()
+if(NOT DEFINED OC_PLUGIN_DEST)
+    set(OC_PLUGIN_DEST "")
+endif()
+
 set_target_properties(opencirt_plugin PROPERTIES
     OUTPUT_NAME "${_oc_module_name}"
     SUFFIX "${_oc_module_suffix}"
@@ -394,6 +405,7 @@ add_custom_command(TARGET opencirt_plugin POST_BUILD
         -DOC_DEST_DIR=${_oc_dest_dir}
         -DOC_PREFIX=opencirt
         -DOC_SUFFIX=${_oc_module_suffix}
+        -DOC_DEST_DIR2=${OC_PLUGIN_DEST}
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/copy_plugin.cmake"
     COMMAND ${CMAKE_COMMAND} -E echo "Build complete: ${_oc_module_name}${_oc_module_suffix}"
     COMMAND ${CMAKE_COMMAND} -E echo "Load with: APPLOAD in BricsCAD V26, command OPENCIRT (OC)"

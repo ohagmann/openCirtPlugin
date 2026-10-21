@@ -54,6 +54,7 @@
 #include <QTimer>
 #include <QSet>
 #include <QDialog>
+#include <QFormLayout>
 #include <QDialogButtonBox>
 #include <QLineEdit>
 #include <QFrame>
@@ -5085,18 +5086,18 @@ static QString readZeichnungsnummer(const QString& dwgPath)
  * @param orderedDwgs List of DWG paths in desired publish order
  * @return Path to generated DSD file, or empty on error
  */
-QString OpenCirtTab::generateDsdFile(const QStringList& orderedDwgs) {
-    // Output PDF path: project root / 06- Plot / Projektname.pdf
-    QString projektName = QDir(m_projectRoot).dirName();
-    QString plotDir = m_projectRoot + "/06- Plot";
-    QDir().mkpath(plotDir);  // Create if not exists
+QString OpenCirtTab::generateDsdFile(const QStringList& orderedDwgs,
+                                      const QString& outDir, const QString& outName) {
+    // Ausgabepdf: <outDir>/<outName>. Ziel und Name waehlt der Anwender im
+    // Publish-Dialog (askPublishTarget); sie werden in der DSD eingetragen,
+    // zusammen mit PromptForDwfName=FALSE, damit BricsCAD ohne Nachfrage
+    // genau dort speichert (V26, am 2026-10-15 verifiziert).
+    QDir().mkpath(outDir);  // Create if not exists
     // Pfade im DSD in der Schreibweise des Betriebssystems:
     // Windows mit Backslash, Linux mit Schraegstrich
-    QString pdfPath = plotDir + "/" + projektName + ".pdf";
+    QString pdfPath = outDir + "/" + outName;
     pdfPath = QDir::toNativeSeparators(pdfPath);
-    
-    QString outDir = plotDir;
-    outDir = QDir::toNativeSeparators(outDir);
+    QString outDirNative = QDir::toNativeSeparators(outDir);
     
     QString dsd;
     dsd += "[DWF6Version]\n";
@@ -5137,25 +5138,41 @@ QString OpenCirtTab::generateDsdFile(const QStringList& orderedDwgs) {
         sheetIdx++;
     }
     
-    // Target section: Type=6 = multi-sheet PDF
+    // Target section: Type=6 = multi-sheet PDF. Der Aufbau der Sektionen
+    // folgt dem Original-DSD (aus dem PUBLISH-Dialog gesichert; auf
+    // BricsCAD V26 verifiziert, 2026-10-15): Ohne [SheetSet Properties] mit
+    // PromptForDwfName=FALSE zeigt V26 nach dem Plotting einen
+    // "Speichern unter"-Dialog, statt an den DWF-Pfad zu schreiben.
     dsd += "[Target]\n";
     dsd += "Type=6\n";
     dsd += QString("DWF=%1\n").arg(pdfPath);
-    dsd += QString("OUT=%1\n").arg(outDir);
-    dsd += "PWD=\n";
-    
-    // MRU sections (required by BricsCAD)
+    dsd += QString("OUT=%1\n").arg(outDirNative);
+    dsd += "LocationType=2\n";
+    dsd += "[SheetSet Properties]\n";
+    dsd += "NoOfCopies=1\n";
+    dsd += "PlotStampOn=FALSE\n";
+    dsd += "PromptForDwfName=FALSE\n";
+    dsd += "IncludeLayer=FALSE\n";
+    dsd += "IncludeOffLayers=FALSE\n";
     dsd += "[MRU Local]\n";
     dsd += "MRU=0\n";
     dsd += "[MRU Sheet List]\n";
     dsd += "MRU=0\n";
     
-    // PDF options: bookmarks = table of contents
+    // PDF options: bookmarks = table of contents. Die Schluesselnamen folgen
+    // dem Original-DSD (fruehere Namen IncludeHyperlinks und
+    // CaptureFontsInDrawing werden nicht gelesen).
     dsd += "[PdfOptions]\n";
-    dsd += "IncludeHyperlinks=TRUE\n";
-    dsd += "CreateBookmarks=TRUE\n";
-    dsd += "CaptureFontsInDrawing=TRUE\n";
     dsd += "ConvertTextToGeometry=FALSE\n";
+    dsd += "LineMerge=FALSE\n";
+    dsd += "EmbedTtf=TRUE\n";
+    dsd += "ImageAntiAliasing=TRUE\n";
+    dsd += "JPEGImageCompression=TRUE\n";
+    dsd += "ExportHyperlinks=TRUE\n";
+    dsd += "CreateBookmarks=TRUE\n";
+    dsd += "VectorResolution=2400\n";
+    dsd += "RasterResolution=300\n";
+    dsd += "PdfA=0\n";
     
     // Write DSD to temp file
     QString tempPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
@@ -5216,29 +5233,20 @@ void OpenCirtTab::onPublishPdf() {
         entries = buildTocEntries(orderedDwgs, tocPageCount);
     }
     
-    // Show summary
+    // Ausgabe (Ordner, Dateiname) abfragen. Als Default gilt der zuletzt
+    // gespeicherte Wert; ohne Vorgabe 06- Plot / Projektordnername.
+    // Abbrechen = Lauf abbrechen.
+    QSettings settings("openCirt", "openCirt");
     QString projektName = QDir(m_projectRoot).dirName();
-    QString pdfName = projektName + ".pdf";
-    QString plotDir = m_projectRoot + "/06- Plot";
-    int totalPages = orderedDwgs.size() + tocPageCount;
+    QString storedDir = settings.value("publish/outDir").toString();
+    QString outDir = (!storedDir.isEmpty() && QDir(storedDir).exists())
+        ? storedDir : (m_projectRoot + "/06- Plot");
+    QString outName = settings.value("publish/outName").toString();
+    if (outName.isEmpty()) outName = projektName;
     
-    QMessageBox::StandardButton reply = QMessageBox::question(this,
-        "PDF publizieren",
-        QString("%1 Zeichnungen + %2 Inhaltsseiten = %3 Blaetter\n"
-                "werden als Multi-Sheet PDF publiziert.\n\n"
-                "Ausgabedatei: %4\n"
-                "Speicherort: %5\n\n"
-                "Schritt 1: Inhaltsverzeichnis erzeugen\n"
-                "Schritt 2: PDF automatisch publizieren\n\n"
-                "Fortfahren?")
-        .arg(orderedDwgs.size())
-        .arg(tocPageCount)
-        .arg(totalPages)
-        .arg(pdfName)
-        .arg(plotDir),
-        QMessageBox::Yes | QMessageBox::Cancel);
-    
-    if (reply != QMessageBox::Yes) return;
+    if (!askPublishTarget(orderedDwgs.size(), tocPageCount, outDir, outName)) return;
+    settings.setValue("publish/outDir", outDir);
+    settings.setValue("publish/outName", outName);
     
     log(QString("Inhaltsverzeichnis: %1 Eintraege auf %2 Seiten")
         .arg(entries.size()).arg(tocPageCount));
@@ -5267,12 +5275,84 @@ void OpenCirtTab::onPublishPdf() {
             log(QString("  %1. %2").arg(i + 1, 3).arg(rel));
         }
 
-        launchPublish(finalDwgs);
+        launchPublish(finalDwgs, outDir, outName);
     } else {
         // No TOC entries -> publish directly
         log("Keine Inhaltseintraege gefunden - publiziere ohne Inhaltsverzeichnis.");
-        launchPublish(orderedDwgs);
+        launchPublish(orderedDwgs, outDir, outName);
     }
+}
+
+/**
+ * @brief Frage die PDF-Ausgabe (Ordner, Dateiname) ab.
+ *
+ * outDir/outName liefern den Default (letzter gespeicherter Wert bzw.
+ * 06- Plot / Projektordnername). Beim OK existiert der Ordner und der
+ * Name traegt die Endung .pdf; false bei Abbrechen.
+ */
+bool OpenCirtTab::askPublishTarget(int sheetCount, int tocPageCount,
+                                   QString& outDir, QString& outName) {
+    QDialog dlg(this);
+    dlg.setWindowTitle("PDF publizieren");
+    
+    QVBoxLayout* layout = new QVBoxLayout(&dlg);
+    layout->addWidget(new QLabel(
+        QString("%1 Zeichnungen + %2 Inhaltsseiten = %3 Blaetter\n"
+                "werden als Multi-Sheet PDF publiziert.\n\n"
+                "Schritt 1: Inhaltsverzeichnis erzeugen\n"
+                "Schritt 2: PDF automatisch publizieren")
+        .arg(sheetCount).arg(tocPageCount).arg(sheetCount + tocPageCount), &dlg));
+    
+    QLineEdit* dirEdit = new QLineEdit(outDir, &dlg);
+    QWidget* dirRow = new QWidget(&dlg);
+    QHBoxLayout* dirRowLayout = new QHBoxLayout(dirRow);
+    dirRowLayout->setContentsMargins(0, 0, 0, 0);
+    dirRowLayout->addWidget(dirEdit, 1);
+    QPushButton* dirBrowse = new QPushButton("Durchsuchen...", dirRow);
+    dirRowLayout->addWidget(dirBrowse);
+    QLineEdit* nameEdit = new QLineEdit(outName, &dlg);
+    
+    QFormLayout* form = new QFormLayout(&dlg);
+    form->addRow("Speicherort:", dirRow);
+    form->addRow("Dateiname:", nameEdit);
+    layout->addLayout(form);
+    layout->addWidget(new QLabel(
+        "Ohne Dateiendung wird .pdf ergaenzt. Ohne Aenderung gilt der "
+        "letzte gewaehlte Wert.", &dlg));
+    
+    QObject::connect(dirBrowse, &QPushButton::clicked, &dlg,
+                     [&dlg, dirEdit]() {
+        QString picked = QFileDialog::getExistingDirectory(
+            &dlg, "Speicherort waehlen", dirEdit->text());
+        if (!picked.isEmpty()) dirEdit->setText(picked);
+    });
+    
+    QDialogButtonBox* buttons =
+        new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    layout->addWidget(buttons);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg,
+                     [&dlg, dirEdit, nameEdit]() {
+        if (dirEdit->text().trimmed().isEmpty() || nameEdit->text().trimmed().isEmpty()) {
+            QMessageBox::warning(&dlg, "PDF publizieren",
+                                 "Speicherort und Dateiname werden benoetigt.");
+            return;
+        }
+        dlg.accept();
+    });
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    
+    if (dlg.exec() != QDialog::Accepted) return false;
+    
+    QDir d(dirEdit->text().trimmed());
+    if (!d.mkpath(d.absolutePath())) return false;
+    outDir = d.absolutePath();
+    
+    QString name = nameEdit->text().trimmed();
+    name.remove('/').remove('\\');
+    if (name.isEmpty()) return false;
+    if (!name.endsWith(".pdf", Qt::CaseInsensitive)) name += ".pdf";
+    outName = name;
+    return true;
 }
 
 /**
@@ -5286,21 +5366,24 @@ void OpenCirtTab::onPublishPdf() {
  *
  * The /b switch forces a separate BricsCAD batch instance.
  * Proven call pattern: bricscad.exe /b "first.dwg" "script.scr"
- * Since FILEDIA=0, BricsCAD uses the PDF path from the DSD (no filepicker).
- * A QTimer polls for the marker file to detect completion.
+ * Die Ausgabe (Ordner, Dateiname) steht in [Target] zusammen mit
+ * PromptForDwfName=FALSE in [SheetSet Properties]: BricsCAD V26 speichert
+ * ohne "Speichern unter"-Dialog direkt an diesem Pfad (verifiziert
+ * 2026-10-15). A QTimer polls for the marker file to detect completion;
+ * bis dahin wird m_publishedPdfPath auf der Platte ueberwacht.
  */
-void OpenCirtTab::launchPublish(const QStringList& orderedDwgs) {
+void OpenCirtTab::launchPublish(const QStringList& orderedDwgs,
+                                const QString& outDir, const QString& outName) {
     // Generate DSD file
-    QString dsdPath = generateDsdFile(orderedDwgs);
+    QString dsdPath = generateDsdFile(orderedDwgs, outDir, outName);
     if (dsdPath.isEmpty()) {
         logError("DSD-Generierung fehlgeschlagen");
         return;
     }
     
-    // Compute the PDF output path (same logic as generateDsdFile)
-    QString projektName = QDir(m_projectRoot).dirName();
-    QString plotDir = m_projectRoot + "/06- Plot";
-    m_publishedPdfPath = plotDir + "/" + projektName + ".pdf";
+    // Vergabener Ausgabe-Pfad - BricsCAD schreibt die PDF genau dorthin
+    m_publishedPdfPath = QDir::cleanPath(outDir + "/" + outName);
+    m_pdfWaitPolls = 0;
     
     // Paths for SCR generation
     QString tempPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
@@ -5328,32 +5411,15 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs) {
     scr += "(progn (setvar \"CMDECHO\" 1)(princ))\n";
     scr += "(progn (setvar \"EXPERT\" 0)(princ))\n";
     
-    // Find newest PDF in plot folder and write its path to marker file
-    QString plotSlash = (m_projectRoot + "/06- Plot/");
-    plotSlash.replace("\\", "/");
+    // Vergabener Ausgabe-Pfad in die Markerdatei schreiben (Inhalt: Pfad)
+    QString pdfSlash = m_publishedPdfPath;
+    pdfSlash.replace("\\", "/");
     scr += QString(
         "(progn"
-        "  (setq oc-dir \"%1\")"
-        "  (setq oc-files (vl-directory-files oc-dir \"*.pdf\" 1))"
-        "  (setq oc-best nil oc-btime 0)"
-        "  (foreach oc-f oc-files"
-        "    (setq oc-ft (vl-file-systime (strcat oc-dir oc-f)))"
-        "    (if oc-ft (progn"
-        "      (setq oc-tv (+ (* (nth 0 oc-ft) 10000000000.0)"
-        "                     (* (nth 1 oc-ft) 100000000.0)"
-        "                     (* (nth 3 oc-ft) 1000000.0)"
-        "                     (* (nth 4 oc-ft) 10000.0)"
-        "                     (* (nth 5 oc-ft) 100.0)"
-        "                     (nth 6 oc-ft)))"
-        "      (if (> oc-tv oc-btime)"
-        "        (setq oc-btime oc-tv oc-best oc-f)))))"
-        "  (setq oc-mk (open \"%2\" \"w\"))"
-        "  (if oc-best"
-        "    (write-line (strcat oc-dir oc-best) oc-mk)"
-        "    (write-line \"PUBLISH_COMPLETE\" oc-mk))"
-        "  (close oc-mk)"
+        "  (if (setq oc-mk (open \"%1\" \"w\"))"
+        "    (progn (write-line \"%2\" oc-mk) (close oc-mk)))"
         "  (princ))\n")
-        .arg(plotSlash, markerSlash);
+        .arg(markerSlash, pdfSlash);
     scr += "_.QUIT\n";
 #ifndef _WIN32
     // Unter Linux gilt die Zeichnung der Batch-Instanz nach dem Publizieren als
@@ -5383,8 +5449,6 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs) {
     QStringList args;
     args << "/b" << dwgPathWin << scrPathWin;
     
-    QString pdfName = projektName + ".pdf";
-    
     log(QString("Starte BricsCAD Batch-Instanz: %1").arg(bricscadExe));
     log(QString("  /b \"%1\" \"%2\"").arg(dwgPathWin, scrPathWin));
     log(QString("  SCR: FILEDIA=0 -> -PUBLISH -> Marker -> _.QUIT"));
@@ -5392,7 +5456,7 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs) {
     
     bool started = QProcess::startDetached(bricscadExe, args);
     if (started) {
-        logSuccess(QString("PDF-Publish gestartet in Batch-Instanz - Ausgabe: %1").arg(pdfName));
+        logSuccess(QString("PDF-Publish gestartet in Batch-Instanz - Ausgabe: %1").arg(QFileInfo(m_publishedPdfPath).fileName()));
         
         // Start polling for completion marker
         m_pdfDoneMarkerPath = markerPath;
@@ -5408,8 +5472,10 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs) {
  * @brief Poll for PDF publish completion via marker file.
  *
  * The SCR in the /b batch instance writes a marker file after -PUBLISH
- * completes and before _.QUIT. Once the marker exists, publish is done.
- * Show success notification with PDF file info.
+ * completes and before _.QUIT. Once the marker exists, the PDF is at the
+ * assigned output path (m_publishedPdfPath; DSD mit PromptForDwfName=FALSE
+ * speichert ohne Nachfrage dorthin). Bis die Datei auf der Platte liegt,
+ * wird gepollt; danach folgt die Erfolgsmeldung mit der echten Datei.
  */
 void OpenCirtTab::onPdfDonePollTimer() {
     if (m_pdfDoneMarkerPath.isEmpty()) {
@@ -5421,22 +5487,26 @@ void OpenCirtTab::onPdfDonePollTimer() {
         return;  // Still running
     }
     
-    // === Marker found! Read PDF path from marker content ===
-    QString pdfPath;
-    {
-        QFile markerFile(m_pdfDoneMarkerPath);
-        if (markerFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            pdfPath = QTextStream(&markerFile).readLine().trimmed();
-            markerFile.close();
+    // Marker vorhanden: PUBLISH beendet. Die PDF steht am vergabenen
+    // Ausgabe-Pfad; kurz auf das Einlagern auf der Platte warten.
+    QFileInfo pdfInfo(m_publishedPdfPath);
+    if (!pdfInfo.exists() || pdfInfo.size() == 0) {
+        if (++m_pdfWaitPolls > 45) {  // ~90 Sekunden Gnadenfrist
+            m_pdfDoneTimer->stop();
+            QFile::remove(m_pdfDoneMarkerPath);
+            m_pdfDoneMarkerPath.clear();
+            m_btnPublish->setText("PDF publizieren");
+            m_btnPublish->setEnabled(true);
+            logError("PDF-Publish beendet, aber die Ausgabedatei wurde unter "
+                     "dem vergebenen Pfad nicht gefunden: " + m_publishedPdfPath);
+            QMessageBox::warning(this, "PDF-Publish",
+                "Der Publish-Vorgang wurde beendet, aber die Datei\n"
+                + pdfInfo.fileName() + "\nnicht unter dem vergebenen Speicherort:\n"
+                + pdfInfo.absolutePath() + "\n\n"
+                "gefunden. Bitte pruefen, ob sie an einem anderen Ort liegt.");
+            m_publishedPdfPath.clear();
         }
-    }
-    
-    // Check if the PDF exists and has content (may still be flushing)
-    if (!pdfPath.isEmpty() && pdfPath != "PUBLISH_COMPLETE") {
-        QFileInfo pdfInfo(pdfPath);
-        if (!pdfInfo.exists() || pdfInfo.size() == 0) {
-            return;  // Keep polling - PDF still being written to disk
-        }
+        return;
     }
     
     // === Publish complete! ===
@@ -5448,34 +5518,24 @@ void OpenCirtTab::onPdfDonePollTimer() {
     m_btnPublish->setText("PDF publizieren");
     m_btnPublish->setEnabled(true);
     
-    // Show result
-    if (!pdfPath.isEmpty() && pdfPath != "PUBLISH_COMPLETE") {
-        QFileInfo pdfInfo(pdfPath);
-        QString sizeStr;
-        qint64 bytes = pdfInfo.size();
-        if (bytes >= 1024 * 1024) {
-            sizeStr = QString("%1 MB").arg(bytes / (1024.0 * 1024.0), 0, 'f', 1);
-        } else {
-            sizeStr = QString("%1 KB").arg(bytes / 1024.0, 0, 'f', 0);
-        }
-        
-        logSuccess(QString("PDF-Publish abgeschlossen: %1 (%2)")
-                   .arg(pdfInfo.fileName(), sizeStr));
-        
-        QMessageBox::information(this, "PDF-Publish abgeschlossen",
-            QString("PDF erfolgreich erzeugt:\n\n"
-                    "%1\n"
-                    "Groesse: %2\n"
-                    "Speicherort: %3")
-            .arg(pdfInfo.fileName())
-            .arg(sizeStr)
-            .arg(pdfInfo.absolutePath()));
+    QString sizeStr;
+    qint64 bytes = pdfInfo.size();
+    if (bytes >= 1024 * 1024) {
+        sizeStr = QString("%1 MB").arg(bytes / (1024.0 * 1024.0), 0, 'f', 1);
     } else {
-        logSuccess("PDF-Publish abgeschlossen.");
-        QMessageBox::information(this, "PDF-Publish abgeschlossen",
-            "Der Publish-Vorgang wurde erfolgreich beendet.\n\n"
-            "Die PDF-Datei wurde am gewaehlten Speicherort abgelegt.");
+        sizeStr = QString("%1 KB").arg(bytes / 1024.0, 0, 'f', 0);
     }
+    
+    logSuccess(QString("PDF-Publish abgeschlossen: %1 (%2)").arg(pdfInfo.fileName(), sizeStr));
+    
+    QMessageBox::information(this, "PDF-Publish abgeschlossen",
+        QString("PDF erfolgreich erzeugt:\n\n"
+                "%1\n"
+                "Groesse: %2\n"
+                "Speicherort: %3")
+        .arg(pdfInfo.fileName())
+        .arg(sizeStr)
+        .arg(pdfInfo.absolutePath()));
     
     m_publishedPdfPath.clear();
 }
