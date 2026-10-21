@@ -6,7 +6,7 @@ REM   CLEAN_BUILD.bat            fuer BricsCAD V27
 REM   CLEAN_BUILD.bat 26         fuer BricsCAD V26
 REM   /force                     BricsCAD ohne Rueckfrage beenden
 REM   BRX SDK: external\brx_sdk_v<NN> oder Umgebungsvariable BRX_SDK_DIR
-REM   Qt: C:\Qt\<Version>\msvc2022_64 (V26: 6.8.3, V27: 6.10.2) oder QT6_DIR
+REM   Qt: C:\Qt\<Version>\msvc2022_64 (V26: 6.8.3, V27: 6.10.3) oder QT6_DIR
 REM ===========================================================
 
 cd /d "%~dp0"

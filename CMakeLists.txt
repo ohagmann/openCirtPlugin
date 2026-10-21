@@ -42,15 +42,17 @@ if(NOT DEFINED BRICSCAD_VERSION)
     set(BRICSCAD_VERSION 27)
 endif()
 # Qt muss zur Version passen, die BricsCAD mitbringt (V26: 6.8.2, V27: 6.10.2,
-# unter Windows wie unter Linux). Unter Linux benutzt das Plugin die
-# Qt-Bibliotheken von BricsCAD. Fuer V26 unter Windows bleibt es bei 6.8.3.
+# unter Windows wie unter Linux); das Plugin benutzt zur Laufzeit die
+# Qt-Bibliotheken von BricsCAD. Patch-Versionen derselben Reihe sind
+# binaerkompatibel: unter Windows wird mit 6.8.3 bzw. 6.10.3 gebaut, weil der
+# Qt-Installer die .2-Staende nicht mehr anbietet.
 if(BRICSCAD_VERSION STREQUAL "26")
     set(_oc_qt_linux "6.8.2")
     set(_oc_qt_windows "6.8.3")
     set(_oc_bricscad_windows "C:/Program Files/Bricsys/BricsCAD V26 de_DE")
 elseif(BRICSCAD_VERSION STREQUAL "27")
     set(_oc_qt_linux "6.10.2")
-    set(_oc_qt_windows "6.10.2")
+    set(_oc_qt_windows "6.10.3")
     # V27 gibt es bisher nur auf Englisch
     set(_oc_bricscad_windows "C:/Program Files/Bricsys/BricsCAD V27 en_US")
 else()

@@ -35,7 +35,7 @@ Windows:
 
 - **BricsCAD V27** oder **V26** (Windows, 64-Bit)
 - **BRX SDK V27** bzw. **V26** (separat von Bricsys zu beziehen, siehe unten)
-- **Qt** (MSVC 2022, 64-Bit): 6.10.2 für V27 (die Version, die V27 mitbringt), 6.8.3 für V26
+- **Qt** (MSVC 2022, 64-Bit): 6.10.3 für V27, 6.8.3 für V26. BricsCAD bringt 6.10.2 bzw. 6.8.2 mit; Patch-Versionen derselben Reihe sind binärkompatibel, eine neuere Reihe (z. B. 6.11) passt nicht
 - **CMake 3.20+**
 - **Visual Studio 2022** (MSVC v143 Toolset)
 
@@ -124,7 +124,7 @@ Die Vorgaben stehen in der Root-`CMakeLists.txt`:
 |---|---|---|
 | `BRICSCAD_VERSION` | `27` (oder `26`) | `27` (oder `26`) |
 | `BRX_SDK_DIR` | `external/brx_sdk_v<NN>` | `external/brx_sdk_v<NN>` |
-| `QT6_DIR` | `C:/Qt/6.10.2/msvc2022_64` (V26: `C:/Qt/6.8.3/msvc2022_64`) | `~/.local/opt/opencirt-toolchain/Qt/6.10.2/gcc_64` (V26: `…/Qt/6.8.2/gcc_64`) |
+| `QT6_DIR` | `C:/Qt/6.10.3/msvc2022_64` (V26: `C:/Qt/6.8.3/msvc2022_64`) | `~/.local/opt/opencirt-toolchain/Qt/6.10.2/gcc_64` (V26: `…/Qt/6.8.2/gcc_64`) |
 | `BRICSCAD_DIR` | `C:/Program Files/Bricsys/BricsCAD V27 en_US` (V26: `…/BricsCAD V26 de_DE`) | `/opt/bricsys/bricscad/v27` (V26: `…/v26`) |
 | `OC_SYSROOT` | – | `~/.local/opt/opencirt-toolchain/sysroot` (optional) |
 | `OC_PLUGIN_DEST` | – (keine zusätzliche Kopie) | – (optional, z. B. über die lokale `local_env.sh`) |

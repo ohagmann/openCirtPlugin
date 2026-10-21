@@ -111,7 +111,7 @@ Die Root-`CMakeLists.txt` ist die einzige Build-Datei. Sie definiert:
 | Variable | Windows | Linux |
 |---|---|---|
 | `BRICSCAD_VERSION` | `27` (oder `26`) | `27` (oder `26`) |
-| `QT6_DIR` | `C:/Qt/6.10.2/msvc2022_64` (V26: `C:/Qt/6.8.3/msvc2022_64`) | `~/.local/opt/opencirt-toolchain/Qt/6.10.2/gcc_64` (V26: `…/Qt/6.8.2/gcc_64`) |
+| `QT6_DIR` | `C:/Qt/6.10.3/msvc2022_64` (V26: `C:/Qt/6.8.3/msvc2022_64`) | `~/.local/opt/opencirt-toolchain/Qt/6.10.2/gcc_64` (V26: `…/Qt/6.8.2/gcc_64`) |
 | `BRICSCAD_DIR` | `C:/Program Files/Bricsys/BricsCAD V27 en_US` (V26: `…/BricsCAD V26 de_DE`) | `/opt/bricsys/bricscad/v27` (V26: `…/v26`) |
 | `OC_SYSROOT` | – | `~/.local/opt/opencirt-toolchain/sysroot` (lokal entpackte Entwicklerpakete, optional) |
 
