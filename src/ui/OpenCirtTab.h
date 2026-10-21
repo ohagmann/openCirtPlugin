@@ -432,10 +432,9 @@ private:
     /// Timer callback: poll for PDF publish completion marker
     void onPdfDonePollTimer();
     
-    /// Ask for the PDF output (folder, file name). outDir/outName carry the
-    /// defaults (last stored values, else 06- Plot / project folder name);
-    /// on return they are normalized (folder exists, name ends with .pdf).
-    /// false if canceled.
+    /// Ask for the PDF output (folder, file name), every time and without
+    /// defaults. On return outDir exists and outName ends with .pdf; an
+    /// existing file was confirmed for replacement. false if canceled.
     bool askPublishTarget(int sheetCount, int tocPageCount, QString& outDir, QString& outName);
     
     /// Launch BricsCAD PDF publish with DSD file
@@ -523,7 +522,7 @@ private:
     // PDF publish completion polling (via /b batch instance + marker file)
     QTimer* m_pdfDoneTimer = nullptr;   ///< Polls for publish-done marker
     QString m_pdfDoneMarkerPath;        ///< Path to completion marker written by SCR
-    QString m_publishedPdfPath;         ///< Vergabener Ausgabe-PDF (steht in der DSD, wird ueberwacht)
+    QString m_publishedPdfPath;         ///< Vergebene Ausgabe-PDF (steht in der DSD, wird ueberwacht)
     int m_pdfWaitPolls = 0;             ///< geduldete Polls, bis die Datei auf der Platte liegt
 
 };

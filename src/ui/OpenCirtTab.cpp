@@ -5233,20 +5233,10 @@ void OpenCirtTab::onPublishPdf() {
         entries = buildTocEntries(orderedDwgs, tocPageCount);
     }
     
-    // Ausgabe (Ordner, Dateiname) abfragen. Als Default gilt der zuletzt
-    // gespeicherte Wert; ohne Vorgabe 06- Plot / Projektordnername.
-    // Abbrechen = Lauf abbrechen.
-    QSettings settings("openCirt", "openCirt");
-    QString projektName = QDir(m_projectRoot).dirName();
-    QString storedDir = settings.value("publish/outDir").toString();
-    QString outDir = (!storedDir.isEmpty() && QDir(storedDir).exists())
-        ? storedDir : (m_projectRoot + "/06- Plot");
-    QString outName = settings.value("publish/outName").toString();
-    if (outName.isEmpty()) outName = projektName;
-    
+    // Ausgabe (Ordner, Dateiname) jedes Mal abfragen - ohne Vorgabe und
+    // ohne etwas zu merken. Abbrechen = Lauf abbrechen.
+    QString outDir, outName;
     if (!askPublishTarget(orderedDwgs.size(), tocPageCount, outDir, outName)) return;
-    settings.setValue("publish/outDir", outDir);
-    settings.setValue("publish/outName", outName);
     
     log(QString("Inhaltsverzeichnis: %1 Eintraege auf %2 Seiten")
         .arg(entries.size()).arg(tocPageCount));
@@ -5286,9 +5276,10 @@ void OpenCirtTab::onPublishPdf() {
 /**
  * @brief Frage die PDF-Ausgabe (Ordner, Dateiname) ab.
  *
- * outDir/outName liefern den Default (letzter gespeicherter Wert bzw.
- * 06- Plot / Projektordnername). Beim OK existiert der Ordner und der
- * Name traegt die Endung .pdf; false bei Abbrechen.
+ * Beide Felder sind leer: openCirt gibt nichts vor und merkt sich nichts.
+ * Beim OK existiert der Ordner und der Name traegt die Endung .pdf. Liegt
+ * dort schon eine Datei, wird hier gefragt, ob sie ersetzt werden soll;
+ * launchPublish loescht sie dann vor dem Start. false bei Abbrechen.
  */
 bool OpenCirtTab::askPublishTarget(int sheetCount, int tocPageCount,
                                    QString& outDir, QString& outName) {
@@ -5303,55 +5294,74 @@ bool OpenCirtTab::askPublishTarget(int sheetCount, int tocPageCount,
                 "Schritt 2: PDF automatisch publizieren")
         .arg(sheetCount).arg(tocPageCount).arg(sheetCount + tocPageCount), &dlg));
     
-    QLineEdit* dirEdit = new QLineEdit(outDir, &dlg);
+    QLineEdit* dirEdit = new QLineEdit(&dlg);
     QWidget* dirRow = new QWidget(&dlg);
     QHBoxLayout* dirRowLayout = new QHBoxLayout(dirRow);
     dirRowLayout->setContentsMargins(0, 0, 0, 0);
     dirRowLayout->addWidget(dirEdit, 1);
     QPushButton* dirBrowse = new QPushButton("Durchsuchen...", dirRow);
     dirRowLayout->addWidget(dirBrowse);
-    QLineEdit* nameEdit = new QLineEdit(outName, &dlg);
+    QLineEdit* nameEdit = new QLineEdit(&dlg);
     
     QFormLayout* form = new QFormLayout(&dlg);
     form->addRow("Speicherort:", dirRow);
     form->addRow("Dateiname:", nameEdit);
     layout->addLayout(form);
-    layout->addWidget(new QLabel(
-        "Ohne Dateiendung wird .pdf ergaenzt. Ohne Aenderung gilt der "
-        "letzte gewaehlte Wert.", &dlg));
+    layout->addWidget(new QLabel("Ohne Dateiendung wird .pdf ergaenzt.", &dlg));
     
+    // "Durchsuchen..." beginnt im Plot-Ordner des Projekts (nur als
+    // Startpunkt der Auswahl, das Feld bleibt leer)
+    const QString plotDir = m_projectRoot + "/06- Plot";
+    const QString browseStart = QDir(plotDir).exists() ? plotDir : m_projectRoot;
     QObject::connect(dirBrowse, &QPushButton::clicked, &dlg,
-                     [&dlg, dirEdit]() {
+                     [&dlg, dirEdit, browseStart]() {
+        QString start = dirEdit->text().trimmed();
+        if (start.isEmpty()) start = browseStart;
         QString picked = QFileDialog::getExistingDirectory(
-            &dlg, "Speicherort waehlen", dirEdit->text());
+            &dlg, "Speicherort waehlen", start);
         if (!picked.isEmpty()) dirEdit->setText(picked);
     });
     
     QDialogButtonBox* buttons =
         new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     layout->addWidget(buttons);
+    QString acceptedDir, acceptedName;
     QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg,
-                     [&dlg, dirEdit, nameEdit]() {
-        if (dirEdit->text().trimmed().isEmpty() || nameEdit->text().trimmed().isEmpty()) {
+                     [&dlg, dirEdit, nameEdit, &acceptedDir, &acceptedName]() {
+        QString dir = dirEdit->text().trimmed();
+        QString name = nameEdit->text().trimmed();
+        name.remove('/').remove('\\');
+        if (dir.isEmpty() || name.isEmpty()) {
             QMessageBox::warning(&dlg, "PDF publizieren",
                                  "Speicherort und Dateiname werden benoetigt.");
             return;
         }
+        if (!name.endsWith(".pdf", Qt::CaseInsensitive)) name += ".pdf";
+        dir = QDir(dir).absolutePath();
+        // Vorhandene Datei: hier fragen, nicht erst in der Batch-Instanz
+        // (die wuerde sonst selbst nachfragen und auf eine Antwort warten)
+        if (QFileInfo::exists(dir + "/" + name)) {
+            if (QMessageBox::question(&dlg, "PDF ersetzen",
+                    QString("Die Datei\n%1\nliegt bereits in\n%2\n\nErsetzen?")
+                    .arg(name, QDir::toNativeSeparators(dir)),
+                    QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
+                return;  // zurueck in den Dialog
+            }
+        }
+        acceptedDir = dir;
+        acceptedName = name;
         dlg.accept();
     });
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     
     if (dlg.exec() != QDialog::Accepted) return false;
-    
-    QDir d(dirEdit->text().trimmed());
-    if (!d.mkpath(d.absolutePath())) return false;
-    outDir = d.absolutePath();
-    
-    QString name = nameEdit->text().trimmed();
-    name.remove('/').remove('\\');
-    if (name.isEmpty()) return false;
-    if (!name.endsWith(".pdf", Qt::CaseInsensitive)) name += ".pdf";
-    outName = name;
+    if (!QDir().mkpath(acceptedDir)) {
+        reportError("PDF publizieren", "Speicherort konnte nicht angelegt werden",
+                    QDir::toNativeSeparators(acceptedDir), false);
+        return false;
+    }
+    outDir = acceptedDir;
+    outName = acceptedName;
     return true;
 }
 
@@ -5381,9 +5391,21 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs,
         return;
     }
     
-    // Vergabener Ausgabe-Pfad - BricsCAD schreibt die PDF genau dorthin
+    // Vergebener Ausgabe-Pfad - BricsCAD schreibt die PDF genau dorthin
     m_publishedPdfPath = QDir::cleanPath(outDir + "/" + outName);
     m_pdfWaitPolls = 0;
+    
+    // Eine vorhandene Datei hat der Anwender im Dialog zum Ersetzen
+    // freigegeben. Sie wird vor dem Start geloescht: sonst fragt die
+    // Batch-Instanz selbst nach und wartet, und die Abschlusspruefung
+    // koennte die alte Datei fuer die neue halten.
+    if (QFileInfo::exists(m_publishedPdfPath) && !QFile::remove(m_publishedPdfPath)) {
+        reportError("PDF-Publish", "Vorhandene PDF konnte nicht ersetzt werden",
+                    QDir::toNativeSeparators(m_publishedPdfPath) +
+                    "\n\nIst die Datei in einem anderen Programm geoeffnet?", false);
+        m_publishedPdfPath.clear();
+        return;
+    }
     
     // Paths for SCR generation
     QString tempPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
@@ -5411,7 +5433,7 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs,
     scr += "(progn (setvar \"CMDECHO\" 1)(princ))\n";
     scr += "(progn (setvar \"EXPERT\" 0)(princ))\n";
     
-    // Vergabener Ausgabe-Pfad in die Markerdatei schreiben (Inhalt: Pfad)
+    // Vergebener Ausgabe-Pfad in die Markerdatei schreiben (Inhalt: Pfad)
     QString pdfSlash = m_publishedPdfPath;
     pdfSlash.replace("\\", "/");
     scr += QString(
@@ -5487,7 +5509,7 @@ void OpenCirtTab::onPdfDonePollTimer() {
         return;  // Still running
     }
     
-    // Marker vorhanden: PUBLISH beendet. Die PDF steht am vergabenen
+    // Marker vorhanden: PUBLISH beendet. Die PDF steht am vergebenen
     // Ausgabe-Pfad; kurz auf das Einlagern auf der Platte warten.
     QFileInfo pdfInfo(m_publishedPdfPath);
     if (!pdfInfo.exists() || pdfInfo.size() == 0) {

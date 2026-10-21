@@ -483,7 +483,7 @@ Grundlage ist die Blattvorlage `OC_VORLAGE_DIN_A2_INHALTSVERZEICHNIS_V1.dwg`, di
 
 ### 10.2 PDF-Publish
 
-Nach dem Inhaltsverzeichnis wird automatisch ein Multi-Sheet-PDF erzeugt, vorgegeben im Ordner `06- Plot/` unter dem Namen des Projektordners. Das PDF enthält alle Zeichnungen in der korrekten Reihenfolge:
+Nach dem Inhaltsverzeichnis wird automatisch ein Multi-Sheet-PDF erzeugt, an dem Ort und unter dem Namen, die im Dialog angegeben werden (üblich: Ordner `06- Plot/`). Das PDF enthält alle Zeichnungen in der korrekten Reihenfolge:
 
 1. Projekt-Deckblatt
 2. Inhaltsverzeichnis
@@ -491,7 +491,7 @@ Nach dem Inhaltsverzeichnis wird automatisch ein Multi-Sheet-PDF erzeugt, vorgeg
 
 ### 10.3 Ausführung
 
-Auf **„PDF publizieren"** klicken. Der Dialog zeigt die Zahl der Blätter und fragt **Speicherort** (mit „Durchsuchen…") und **Dateiname** ab. Vorgabe ist der zuletzt gewählte Wert, beim ersten Mal `06- Plot/<Projektordner>.pdf`; ohne Endung wird `.pdf` ergänzt. Nach „OK" werden Inhaltsverzeichnis und PDF nacheinander erzeugt. Das Inhaltsverzeichnis entsteht ohne Bildaufbau; für das PDF startet eine zweite BricsCAD-Instanz, die die Blätter ohne weitere Rückfrage in die gewählte Datei plottet und sich danach beendet. Eine Meldung nennt am Ende die fertige Datei.
+Auf **„PDF publizieren"** klicken. Der Dialog zeigt die Zahl der Blätter und fragt **Speicherort** (mit „Durchsuchen…", die Auswahl beginnt im `06- Plot` des Projekts) und **Dateiname** ab. Beide Felder sind jedes Mal leer, openCirt merkt sich nichts; ohne Endung wird `.pdf` ergänzt. Gibt es die Datei schon, fragt openCirt, ob sie ersetzt werden soll („Nein" führt zurück in den Dialog). Nach „OK" werden Inhaltsverzeichnis und PDF nacheinander erzeugt. Das Inhaltsverzeichnis entsteht ohne Bildaufbau; für das PDF startet eine zweite BricsCAD-Instanz, die die Blätter ohne weitere Rückfrage in die gewählte Datei plottet und sich danach beendet. Eine Meldung nennt am Ende die fertige Datei.
 
 ---
 
