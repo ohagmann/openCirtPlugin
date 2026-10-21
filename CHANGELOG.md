@@ -22,7 +22,7 @@ Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei re
 ### Geprüft (Linux)
 - Beispielprojekt (Projekt erstellen, IO-Liste, PDF publizieren) und Erstellliste-Vorlage (Projekt aufbauen, Projekt erstellen, PDF publizieren), jeweils mit `opencirt-2.2.0-v26.lrx` in BricsCAD V26.2.08 und mit `opencirt-2.2.0-v27.lrx` in V27.1.05 auf frischen Kopien desselben Stands: Auszüge aller Blätter gleich (11 Blätter mit 8.930 bzw. 751 Attributen; Werte, Einfügepunkte, Ausrichtungspunkte, Textmaße), IO-Belegungsliste byte-gleich, Log des Projektaufbaus zeilengleich, PDF (11 Seiten) nach Wortbestand, Lage und Pixeln gleich. Die Linux-Korrektur der Textausrichtung (`adjustTextAlignment`) wirkt in V27 unverändert.
 - PDF publizieren mit dem neuen Dialog unter V26 und V27: Die Felder sind leer, in den Einstellungen wird nichts gespeichert. Die Batch-Instanz schreibt die PDF ohne Rückfrage an den gewählten Ort und beendet sich, die Erfolgsmeldung nennt die Datei. Zweiter Publish auf dieselbe Datei: openCirt fragt „PDF ersetzen", nach „Ja" läuft der Publish durch (vorher wartete die Batch-Instanz auf ihre eigene Rückfrage); nach „Nein" kommt der Dialog zurück, nach „Abbrechen" startet nichts und die PDF bleibt unverändert.
-- Windows-Build steht aus.
+- Windows-Build für V27 am 2026-10-21 vom Anwender gebaut (MSVC 14.44, Qt 6.10.3): `opencirt-2.2.0-v27.brx` liegt im Beispielprojekt (bindet `brx27.dll` und Qt6 ein). Der Windows-Build für V26 steht aus.
 
 ## [2.1.0] - 2026-10-12
 
