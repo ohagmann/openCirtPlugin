@@ -28,34 +28,66 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # ============================================================================
+# BricsCAD-Version
+# ============================================================================
+# Gebaut wird fuer eine BricsCAD-Hauptversion: 26 oder 27 (Vorgabe). Ein
+# Plugin laedt nur in der Version, gegen deren SDK es gebaut ist. Umschalten
+# mit cmake -DBRICSCAD_VERSION=26 oder der Umgebungsvariable BRICSCAD_VERSION.
+# Davon haengen ab: SDK-Ordner, Bibliotheksnamen (brx<NN>), die Vorgaben fuer
+# Qt und die BricsCAD-Installation und der Dateiname (...-v<NN>).
+if(NOT DEFINED BRICSCAD_VERSION AND DEFINED ENV{BRICSCAD_VERSION})
+    set(BRICSCAD_VERSION "$ENV{BRICSCAD_VERSION}")
+endif()
+if(NOT DEFINED BRICSCAD_VERSION)
+    set(BRICSCAD_VERSION 27)
+endif()
+# Qt muss zur Version passen, die BricsCAD mitbringt (V26: 6.8.2, V27: 6.10.2,
+# unter Windows wie unter Linux). Unter Linux benutzt das Plugin die
+# Qt-Bibliotheken von BricsCAD. Fuer V26 unter Windows bleibt es bei 6.8.3.
+if(BRICSCAD_VERSION STREQUAL "26")
+    set(_oc_qt_linux "6.8.2")
+    set(_oc_qt_windows "6.8.3")
+    set(_oc_bricscad_windows "C:/Program Files/Bricsys/BricsCAD V26 de_DE")
+elseif(BRICSCAD_VERSION STREQUAL "27")
+    set(_oc_qt_linux "6.10.2")
+    set(_oc_qt_windows "6.10.2")
+    # V27 gibt es bisher nur auf Englisch
+    set(_oc_bricscad_windows "C:/Program Files/Bricsys/BricsCAD V27 en_US")
+else()
+    message(FATAL_ERROR "BRICSCAD_VERSION=${BRICSCAD_VERSION} wird nicht unterstuetzt (26 oder 27).")
+endif()
+
+# ============================================================================
 # Plattform-Pfade definieren
 # ============================================================================
 # Die Vorgaben lassen sich ohne Aenderung dieser Datei ueberschreiben:
 #   cmake -DQT6_DIR=... -DBRICSCAD_DIR=... -DOC_SYSROOT=...
 # oder ueber gleichnamige Umgebungsvariablen (siehe CLEAN_BUILD.sh).
-# BRX SDK: Vorgabe ist external/brx_sdk im Projekt. BRX_SDK_DIR (CMake-Variable
-# oder Umgebungsvariable) zeigt auf ein SDK an anderer Stelle, z.B. ein
-# gemeinsames fuer openCirt und batchTool.
+# BRX SDK: Vorgabe ist external/brx_sdk_v<NN> im Projekt, sonst
+# external/brx_sdk. BRX_SDK_DIR (CMake-Variable oder Umgebungsvariable) zeigt
+# auf ein SDK an anderer Stelle, z.B. ein gemeinsames fuer openCirt und
+# batchTool. Ob das SDK zur gewaehlten Version passt, prueft brx_version.h.
 if(NOT DEFINED BRX_SDK_DIR AND DEFINED ENV{BRX_SDK_DIR})
     set(BRX_SDK_DIR "$ENV{BRX_SDK_DIR}")
 endif()
 if(DEFINED BRX_SDK_DIR AND NOT "${BRX_SDK_DIR}" STREQUAL "")
     set(BRX_SDK_PATH "${BRX_SDK_DIR}")
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/brx_sdk_v${BRICSCAD_VERSION}/inc")
+    set(BRX_SDK_PATH "${CMAKE_CURRENT_SOURCE_DIR}/external/brx_sdk_v${BRICSCAD_VERSION}")
 else()
     set(BRX_SDK_PATH "${CMAKE_CURRENT_SOURCE_DIR}/external/brx_sdk")
 endif()
 set(BRX_INC_DIR "${BRX_SDK_PATH}/inc")
 
 if(WIN32)
-    set(_oc_qt6_default "C:/Qt/6.8.3/msvc2022_64")
-    set(_oc_bricscad_default "C:/Program Files/Bricsys/BricsCAD V26 de_DE")
-    # Import-Bibliotheken (brx26.lib) liegen im SDK
+    set(_oc_qt6_default "C:/Qt/${_oc_qt_windows}/msvc2022_64")
+    set(_oc_bricscad_default "${_oc_bricscad_windows}")
+    # Import-Bibliotheken (brx<NN>.lib) liegen im SDK
     set(BRX_LIB_DIR "${BRX_SDK_PATH}/lib64")
 else()
-    # Qt muss zur Version passen, die BricsCAD mitbringt (V26: Qt 6.8.2).
     # Das Plugin laeuft im BricsCAD-Prozess und benutzt dessen Qt-Bibliotheken.
-    set(_oc_qt6_default "$ENV{HOME}/.local/opt/opencirt-toolchain/Qt/6.8.2/gcc_64")
-    set(_oc_bricscad_default "/opt/bricsys/bricscad/v26")
+    set(_oc_qt6_default "$ENV{HOME}/.local/opt/opencirt-toolchain/Qt/${_oc_qt_linux}/gcc_64")
+    set(_oc_bricscad_default "/opt/bricsys/bricscad/v${BRICSCAD_VERSION}")
     # Optional: Verzeichnis mit lokal entpackten Entwicklerpaketen
     # (OpenGL-/xkbcommon-Header), falls sie nicht systemweit installiert sind.
     set(_oc_sysroot_default "$ENV{HOME}/.local/opt/opencirt-toolchain/sysroot")
@@ -77,13 +109,18 @@ if(NOT WIN32)
         set(OC_SYSROOT "${_oc_sysroot_default}")
     endif()
     # Unter Linux wird direkt gegen die Bibliotheken der Installation gelinkt
-    # (libbrx26.so, libdrx_entrypoint.a, libTD_*.so)
+    # (libbrx<NN>.so, libdrx_entrypoint.a, libTD_*.so)
     set(BRX_LIB_DIR "${BRICSCAD_DIR}")
 endif()
 
 # Prüfungen
 if(NOT EXISTS "${BRX_SDK_PATH}/inc")
-    message(FATAL_ERROR "BRX SDK nicht gefunden: ${BRX_SDK_PATH}\nDas SDK (Ordner mit inc/ und lib64/) nach external/brx_sdk kopieren oder BRX_SDK_DIR setzen: cmake -DBRX_SDK_DIR=<Pfad> oder Umgebungsvariable BRX_SDK_DIR.")
+    message(FATAL_ERROR "BRX SDK nicht gefunden: ${BRX_SDK_PATH}\nDas SDK fuer V${BRICSCAD_VERSION} (Ordner mit inc/ und lib64/) nach external/brx_sdk_v${BRICSCAD_VERSION} kopieren oder BRX_SDK_DIR setzen: cmake -DBRX_SDK_DIR=<Pfad> oder Umgebungsvariable BRX_SDK_DIR.")
+endif()
+file(STRINGS "${BRX_INC_DIR}/brx_version.h" _oc_brxver REGEX "define[ \t]+__BRXVER[ \t]+[0-9]+")
+string(REGEX MATCH "__BRXVER[ \t]+([0-9]+)" _oc_unused "${_oc_brxver}")
+if(NOT CMAKE_MATCH_1 STREQUAL BRICSCAD_VERSION)
+    message(FATAL_ERROR "Das BRX SDK unter ${BRX_SDK_PATH} gehoert zu V${CMAKE_MATCH_1}, gebaut werden soll fuer V${BRICSCAD_VERSION}.\nDas SDK fuer V${BRICSCAD_VERSION} nach external/brx_sdk_v${BRICSCAD_VERSION} legen, BRX_SDK_DIR darauf setzen oder BRICSCAD_VERSION anpassen.")
 endif()
 
 if(NOT EXISTS ${QT6_DIR})
@@ -91,12 +128,12 @@ if(NOT EXISTS ${QT6_DIR})
 endif()
 
 if(NOT EXISTS ${BRICSCAD_DIR})
-    message(FATAL_ERROR "BricsCAD V26 not found at ${BRICSCAD_DIR}")
+    message(FATAL_ERROR "BricsCAD V${BRICSCAD_VERSION} not found at ${BRICSCAD_DIR}")
 endif()
 
 message(STATUS "✅ Qt6: ${QT6_DIR}")
 message(STATUS "✅ BRX SDK: ${BRX_SDK_PATH}")
-message(STATUS "✅ BricsCAD V26: ${BRICSCAD_DIR}")
+message(STATUS "✅ BricsCAD V${BRICSCAD_VERSION}: ${BRICSCAD_DIR}")
 
 # ============================================================================
 # Linux: Grundeinstellungen
@@ -127,6 +164,17 @@ endif()
 # ============================================================================
 list(PREPEND CMAKE_PREFIX_PATH "${QT6_DIR}")
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
+# Linux: Qt-Version mit der von BricsCAD vergleichen (libQt6Core.so.6.x.y)
+if(NOT WIN32)
+    file(GLOB _oc_bcad_qt "${BRICSCAD_DIR}/libQt6Core.so.6.*.*")
+    if(_oc_bcad_qt)
+        list(GET _oc_bcad_qt 0 _oc_bcad_qt)
+        string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+$" _oc_bcad_qt "${_oc_bcad_qt}")
+        if(NOT _oc_bcad_qt STREQUAL Qt6_VERSION)
+            message(WARNING "Qt ${Qt6_VERSION} aus ${QT6_DIR}, BricsCAD V${BRICSCAD_VERSION} bringt Qt ${_oc_bcad_qt} mit. Das Plugin muss gegen dieselbe Version gebaut werden (QT6_DIR).")
+        endif()
+    endif()
+endif()
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
@@ -206,14 +254,15 @@ set(PLUGIN_HEADERS
 # ============================================================================
 # BricsCAD Libraries
 # ============================================================================
+set(_v ${BRICSCAD_VERSION})
 if(WIN32)
-    find_library(BRX26_LIB NAMES brx26.lib PATHS ${BRX_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
-    find_library(BRXHLRAPI26_LIB NAMES BrxHlrApi26.lib PATHS ${BRX_LIB_DIR} NO_DEFAULT_PATH)
-    find_library(BRXATIL26_LIB NAMES BrxATIL26.lib PATHS ${BRX_LIB_DIR} NO_DEFAULT_PATH)
+    find_library(BRX_LIB NAMES brx${_v}.lib PATHS ${BRX_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
+    find_library(BRXHLRAPI_LIB NAMES BrxHlrApi${_v}.lib PATHS ${BRX_LIB_DIR} NO_DEFAULT_PATH)
+    find_library(BRXATIL_LIB NAMES BrxATIL${_v}.lib PATHS ${BRX_LIB_DIR} NO_DEFAULT_PATH)
 else()
-    find_library(BRX26_LIB NAMES brx26 PATHS ${BRX_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
-    find_library(BRXHLRAPI26_LIB NAMES brxhlrapi26 PATHS ${BRX_LIB_DIR} NO_DEFAULT_PATH)
-    find_library(BRXATIL26_LIB NAMES brxatil26 PATHS ${BRX_LIB_DIR} NO_DEFAULT_PATH)
+    find_library(BRX_LIB NAMES brx${_v} PATHS ${BRX_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
+    find_library(BRXHLRAPI_LIB NAMES brxhlrapi${_v} PATHS ${BRX_LIB_DIR} NO_DEFAULT_PATH)
+    find_library(BRXATIL_LIB NAMES brxatil${_v} PATHS ${BRX_LIB_DIR} NO_DEFAULT_PATH)
     # Teigha-Basisbibliotheken (Speicherverwaltung, Laufzeitkern), siehe LinuxBuild.txt
     find_library(TD_ALLOC_LIB NAMES TD_Alloc PATHS ${BRX_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
     find_library(TD_ROOT_LIB NAMES TD_Root PATHS ${BRX_LIB_DIR} NO_DEFAULT_PATH REQUIRED)
@@ -224,12 +273,12 @@ else()
     endif()
 endif()
 
-message(STATUS "✅ BRX26: ${BRX26_LIB}")
-if(BRXHLRAPI26_LIB)
-    message(STATUS "✅ BRXHLRAPI26: ${BRXHLRAPI26_LIB}")
+message(STATUS "✅ BRX: ${BRX_LIB}")
+if(BRXHLRAPI_LIB)
+    message(STATUS "✅ BRXHLRAPI: ${BRXHLRAPI_LIB}")
 endif()
-if(BRXATIL26_LIB)
-    message(STATUS "✅ BRXATIL26: ${BRXATIL26_LIB}")
+if(BRXATIL_LIB)
+    message(STATUS "✅ BRXATIL: ${BRXATIL_LIB}")
 endif()
 
 # ============================================================================
@@ -245,6 +294,7 @@ add_library(opencirt_plugin SHARED
 # ============================================================================
 target_compile_definitions(opencirt_plugin PRIVATE
     PLUGIN_VERSION="${PROJECT_VERSION}"
+    BRICSCAD_VERSION_STR="${BRICSCAD_VERSION}"
     _BRXEXPORT
     __BRXTARGET
     _UNICODE
@@ -308,12 +358,12 @@ endif()
 # ============================================================================
 # Link Libraries
 # ============================================================================
-set(BRX_LIBRARIES ${BRX26_LIB})
-if(BRXHLRAPI26_LIB)
-    list(APPEND BRX_LIBRARIES ${BRXHLRAPI26_LIB})
+set(BRX_LIBRARIES ${BRX_LIB})
+if(BRXHLRAPI_LIB)
+    list(APPEND BRX_LIBRARIES ${BRXHLRAPI_LIB})
 endif()
-if(BRXATIL26_LIB)
-    list(APPEND BRX_LIBRARIES ${BRXATIL26_LIB})
+if(BRXATIL_LIB)
+    list(APPEND BRX_LIBRARIES ${BRXATIL_LIB})
 endif()
 if(NOT WIN32)
     list(APPEND BRX_LIBRARIES ${TD_ALLOC_LIB} ${TD_ROOT_LIB})
@@ -330,7 +380,7 @@ if(NOT WIN32)
         "LINKER:--whole-archive,${DRX_ENTRYPOINT_LIB},--no-whole-archive"
         # Fehlende Symbole beim Linken melden, nicht erst beim Laden in BricsCAD
         "LINKER:--no-undefined"
-        # Abhaengigkeiten von libbrx26.so in der Installation aufloesen
+        # Abhaengigkeiten von libbrx<NN>.so in der Installation aufloesen
         "LINKER:-rpath-link,${BRX_LIB_DIR}"
     )
 endif()
@@ -347,9 +397,9 @@ endif()
 # ============================================================================
 # Output Configuration
 # ============================================================================
-# Windows: opencirt-<Version>.brx, Linux: opencirt-<Version>.lrx (Linux
-# Runtime eXtension). Die Version steht im Dateinamen, damit sich die
-# Staende auseinanderhalten lassen.
+# Windows: opencirt-<Version>-v<NN>.brx, Linux: opencirt-<Version>-v<NN>.lrx
+# (Linux Runtime eXtension, NN = BricsCAD-Version). Version und BricsCAD-
+# Version stehen im Dateinamen, damit sich die Staende auseinanderhalten lassen.
 if(WIN32)
     set(_oc_module_suffix ".brx")
     set(_oc_dest_dir "${CMAKE_CURRENT_SOURCE_DIR}/sample_project/00- BricsCAD Plugin/00- Windows Version")
@@ -357,7 +407,7 @@ else()
     set(_oc_module_suffix ".lrx")
     set(_oc_dest_dir "${CMAKE_CURRENT_SOURCE_DIR}/sample_project/00- BricsCAD Plugin/01- Linux Version")
 endif()
-set(_oc_module_name "opencirt-${PROJECT_VERSION}")
+set(_oc_module_name "opencirt-${PROJECT_VERSION}-v${BRICSCAD_VERSION}")
 
 # Optional: fertige Fassung zusätzlich an ein zweites Ziel ablegen (z.B.
 # Projektordner). OC_PLUGIN_DEST wird als CMake-Variable oder Umgebungsvariable
@@ -398,16 +448,18 @@ message(STATUS "🎯 ==========================================")
 message(STATUS "")
 
 # Nach dem Bauen: die fertige Datei ins Beispielprojekt legen. Aeltere
-# Staende dort werden entfernt, damit immer genau eine Version dort liegt.
+# Staende fuer dieselbe BricsCAD-Version werden dort entfernt, damit je
+# BricsCAD-Version genau ein Stand dort liegt.
 add_custom_command(TARGET opencirt_plugin POST_BUILD
     COMMAND ${CMAKE_COMMAND}
         -DOC_MODULE=$<TARGET_FILE:opencirt_plugin>
         -DOC_DEST_DIR=${_oc_dest_dir}
         -DOC_PREFIX=opencirt
+        -DOC_TAG=-v${BRICSCAD_VERSION}
         -DOC_SUFFIX=${_oc_module_suffix}
         -DOC_DEST_DIR2=${OC_PLUGIN_DEST}
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/copy_plugin.cmake"
     COMMAND ${CMAKE_COMMAND} -E echo "Build complete: ${_oc_module_name}${_oc_module_suffix}"
-    COMMAND ${CMAKE_COMMAND} -E echo "Load with: APPLOAD in BricsCAD V26, command OPENCIRT (OC)"
+    COMMAND ${CMAKE_COMMAND} -E echo "Load with: APPLOAD in BricsCAD V${BRICSCAD_VERSION}, command OPENCIRT (OC)"
     VERBATIM
 )

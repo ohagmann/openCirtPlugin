@@ -2,12 +2,17 @@
 # ===========================================================
 # Clean Build - Linux (Gegenstueck zu CLEAN_BUILD.bat)
 # ===========================================================
-# Baut opencirt-<Version>.lrx fuer BricsCAD V26 unter Linux. Die Version
-# stammt aus dem obersten Abschnitt von CHANGELOG.md.
+# Baut opencirt-<Version>-v<NN>.lrx fuer BricsCAD V<NN> unter Linux:
+#   ./CLEAN_BUILD.sh       fuer V27
+#   ./CLEAN_BUILD.sh 26    fuer V26
+# Die Version stammt aus dem obersten Abschnitt von CHANGELOG.md.
 #
 # Vorgaben lassen sich ueber Umgebungsvariablen aendern:
-#   QT6_DIR       Qt-SDK, muss zur Qt-Version von BricsCAD passen (V26: 6.8.2)
-#   BRICSCAD_DIR  BricsCAD-Installation (Vorgabe /opt/bricsys/bricscad/v26)
+#   BRICSCAD_VERSION  26 oder 27 (Vorgabe 27; ein Argument hat Vorrang)
+#   QT6_DIR       Qt-SDK, muss zur Qt-Version von BricsCAD passen
+#                 (V26: 6.8.2, V27: 6.10.2)
+#   BRICSCAD_DIR  BricsCAD-Installation (Vorgabe /opt/bricsys/bricscad/v<NN>)
+#   BRX_SDK_DIR   BRX SDK (Vorgabe external/brx_sdk_v<NN>)
 #   OC_SYSROOT    optional: lokal entpackte Entwicklerpakete (OpenGL-Header)
 #   OC_TOOLCHAIN  Ordner mit venv/bin/cmake und venv/bin/ninja
 #                 (Vorgabe ~/.local/opt/opencirt-toolchain)
@@ -16,6 +21,12 @@
 # Fassung des Plugins; die neue gilt nach dem naechsten Start von BricsCAD.
 
 set -euo pipefail
+
+case "${1:-}" in
+    26|27) export BRICSCAD_VERSION="$1" ;;
+    "") ;;
+    *) echo "Aufruf: $0 [26|27]"; exit 1 ;;
+esac
 
 cd "$(dirname "$(readlink -f "$0")")"
 ROOT="$(pwd)"

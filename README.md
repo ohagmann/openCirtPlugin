@@ -1,6 +1,6 @@
 # openCirt – GA-Planungssoftware für BricsCAD
 
-Ein BRX-Plugin (C++/Qt6) zur Erstellung von Planungsunterlagen für die Gebäudeautomation (nach VDI 3814) in BricsCAD V26 unter Windows und Linux. Aus Schema-Zeichnungen mit standardisierten Symbolen entstehen Betriebsmittelkennzeichen, BAS-Adressen, GA-Funktionslisten, Summenblätter, Deckblätter, Inhaltsverzeichnis, Datenpunkt- und Sensorlisten und das PDF-Gesamtdokument – aus einem Fenster heraus, ohne die Zeichnungen einzeln zu öffnen. openCirt ist DIE freie GA-Planungssoftware für alle - kostenlos, hocheffizient und einfach zu bedienen.
+Ein BRX-Plugin (C++/Qt6) zur Erstellung von Planungsunterlagen für die Gebäudeautomation (nach VDI 3814) in BricsCAD V27 und V26 unter Windows und Linux. Aus Schema-Zeichnungen mit standardisierten Symbolen entstehen Betriebsmittelkennzeichen, BAS-Adressen, GA-Funktionslisten, Summenblätter, Deckblätter, Inhaltsverzeichnis, Datenpunkt- und Sensorlisten und das PDF-Gesamtdokument – aus einem Fenster heraus, ohne die Zeichnungen einzeln zu öffnen. openCirt ist DIE freie GA-Planungssoftware für alle - kostenlos, hocheffizient und einfach zu bedienen.
 
 Bis Version 1.7.3 war openCirt ein Tab im Plugin batchTool/openCirt. Seit 2.0.0 sind es zwei Plugins: **openCirt** (dieses Repository) und **[batchTool](https://github.com/ohagmann/batchToolPlugin)** für die Stapelverarbeitung beliebiger DWG-Dateien (Text, Attribute, Layer, LISP). Beide lassen sich gleichzeitig in BricsCAD laden.
 
@@ -33,17 +33,17 @@ Das Protokoll im unteren Teil des Fensters ist die einzige Ausgabe; Dialoge ersc
 
 Windows:
 
-- **BricsCAD V26** (Windows, 64-Bit)
-- **BRX SDK V26** (separat von Bricsys zu beziehen, siehe unten)
-- **Qt 6.8+** (MSVC 2022, 64-Bit)
+- **BricsCAD V27** oder **V26** (Windows, 64-Bit)
+- **BRX SDK V27** bzw. **V26** (separat von Bricsys zu beziehen, siehe unten)
+- **Qt** (MSVC 2022, 64-Bit): 6.10.2 für V27 (die Version, die V27 mitbringt), 6.8.3 für V26
 - **CMake 3.20+**
 - **Visual Studio 2022** (MSVC v143 Toolset)
 
 Linux:
 
-- **BricsCAD V26** (64-Bit, getestet mit V26.2.07 unter Ubuntu)
-- **BRX SDK V26** – dasselbe SDK wie unter Windows, die Header sind plattformneutral
-- **Qt 6.8.2** (gcc_64) – genau die Version, die BricsCAD mitbringt. Das Plugin läuft im BricsCAD-Prozess und benutzt dessen Qt-Bibliotheken; das SDK wird nur zum Bauen gebraucht
+- **BricsCAD V27** (64-Bit, getestet mit V27.1.05 unter Linux Mint 22) oder **V26** (getestet mit V26.2.07/V26.2.08)
+- **BRX SDK V27** bzw. **V26** – dasselbe SDK wie unter Windows, die Header sind plattformneutral
+- **Qt** (gcc_64) in genau der Version, die BricsCAD mitbringt: **6.10.2** für V27, **6.8.2** für V26. Das Plugin läuft im BricsCAD-Prozess und benutzt dessen Qt-Bibliotheken; das SDK wird nur zum Bauen gebraucht
 - **CMake 3.20+**, **Ninja**, **g++** mit C++17
 - OpenGL-Entwicklerdateien (`libgl-dev` oder gleichwertig), die Qt beim Konfigurieren verlangt
 
@@ -51,20 +51,27 @@ Zur Laufzeit außerdem **LibreOffice** (oder unter Windows Excel) zum Umwandeln 
 
 ### BRX SDK
 
-Das BRX SDK ist proprietär und wird von Bricsys bereitgestellt. Es ist nicht Teil dieses Repositories. Nach dem Bezug muss das SDK unter `external/brx_sdk/` abgelegt werden, sodass die Struktur wie folgt aussieht:
+Das BRX SDK ist proprietär und wird von Bricsys bereitgestellt. Es ist nicht Teil dieses Repositories. Jede BricsCAD-Version hat ihr eigenes SDK; nach dem Bezug wird es unter `external/brx_sdk_v<NN>/` abgelegt (`NN` = BricsCAD-Version), sodass die Struktur wie folgt aussieht:
 
 ```
 external/
-  brx_sdk/
+  brx_sdk_v27/
     inc/         ← Header-Dateien
     inc64/
-    lib64/       ← brx26.lib etc.
+    lib64/       ← brx27.lib etc.
     docs/
+  brx_sdk_v26/   ← nur, wenn auch für V26 gebaut wird
 ```
+
+Ein SDK unter `external/brx_sdk/` (bisherige Ablage) wird ebenfalls gefunden. Der Build prüft an `inc/brx_version.h`, ob das SDK zur gewählten BricsCAD-Version gehört, und bricht sonst mit einem Hinweis ab.
 
 Das SDK kann über das Bricsys Developer Network bezogen werden: https://www.bricsys.com/en-eu/developers
 
-Liegt das SDK an anderer Stelle (etwa ein gemeinsames für openCirt und batchTool), zeigt `BRX_SDK_DIR` darauf: als CMake-Variable (`cmake -DBRX_SDK_DIR=…`) oder als Umgebungsvariable. Unter Linux genügt auch eine Verknüpfung `external/brx_sdk`; unter Windows muss der Ordner kopiert sein oder `BRX_SDK_DIR` gesetzt werden.
+Liegt das SDK an anderer Stelle (etwa ein gemeinsames für openCirt und batchTool), zeigt `BRX_SDK_DIR` darauf: als CMake-Variable (`cmake -DBRX_SDK_DIR=…`) oder als Umgebungsvariable. Unter Linux genügt auch eine Verknüpfung `external/brx_sdk_v<NN>`; unter Windows muss der Ordner kopiert sein oder `BRX_SDK_DIR` gesetzt werden.
+
+### BricsCAD-Version
+
+Ein Plugin lädt nur in der BricsCAD-Version, für deren SDK es gebaut ist. Gebaut wird für **V27**; für V26 mit dem Argument `26` (`CLEAN_BUILD.bat 26`, `./CLEAN_BUILD.sh 26`) oder mit `BRICSCAD_VERSION=26` (CMake-Variable oder Umgebungsvariable). Die Version steht im Dateinamen, z. B. `opencirt-<Version>-v27.brx` und `opencirt-<Version>-v26.brx`.
 
 ## Build
 
@@ -78,7 +85,7 @@ Das Skript führt folgende Schritte aus:
 3. CMake-Konfiguration (Visual Studio 17 2022, x64, Release)
 4. MSBuild-Kompilierung
 
-Das fertige Plugin liegt anschließend unter `build_windows\Release\opencirt-<Version>.brx` (die Version stammt aus dem obersten Abschnitt von `CHANGELOG.md`, z.B. `opencirt-2.0.0.brx`) und wird zusätzlich nach `sample_project/00- BricsCAD Plugin/00- Windows Version/` gelegt; ältere Stände dort werden entfernt.
+Das fertige Plugin liegt anschließend unter `build_windows\Release\opencirt-<Version>-v<NN>.brx` (die Version stammt aus dem obersten Abschnitt von `CHANGELOG.md`, `NN` ist die BricsCAD-Version, z.B. `opencirt-2.2.0-v27.brx`) und wird zusätzlich nach `sample_project/00- BricsCAD Plugin/00- Windows Version/` gelegt; ältere Stände derselben BricsCAD-Version werden dort entfernt.
 
 ### Linux
 
@@ -86,7 +93,7 @@ Das fertige Plugin liegt anschließend unter `build_windows\Release\opencirt-<Ve
 ./CLEAN_BUILD.sh
 ```
 
-Das Skript löscht `build_linux`, konfiguriert mit CMake (Generator Ninja, Release) und baut. Das fertige Plugin liegt unter `build_linux/Release/opencirt-<Version>.lrx` und wird zusätzlich nach `sample_project/00- BricsCAD Plugin/01- Linux Version/` gelegt; ältere Stände dort werden entfernt. Ein laufendes BricsCAD wird nicht beendet; es behält die geladene Fassung, die neue gilt nach dem nächsten Start.
+Das Skript löscht `build_linux`, konfiguriert mit CMake (Generator Ninja, Release) und baut. Das fertige Plugin liegt unter `build_linux/Release/opencirt-<Version>-v<NN>.lrx` und wird zusätzlich nach `sample_project/00- BricsCAD Plugin/01- Linux Version/` gelegt; ältere Stände derselben BricsCAD-Version werden dort entfernt. `./CLEAN_BUILD.sh 26` baut für V26. Ein laufendes BricsCAD wird nicht beendet; es behält die geladene Fassung, die neue gilt nach dem nächsten Start.
 
 Alles Nötige lässt sich ohne Systemrechte im Benutzerverzeichnis einrichten. Vorgabe ist `~/.local/opt/opencirt-toolchain`:
 
@@ -94,7 +101,8 @@ Alles Nötige lässt sich ohne Systemrechte im Benutzerverzeichnis einrichten. V
 TC=~/.local/opt/opencirt-toolchain
 python3 -m venv $TC/venv
 $TC/venv/bin/pip install cmake ninja aqtinstall
-$TC/venv/bin/aqt install-qt linux desktop 6.8.2 linux_gcc_64 -O $TC/Qt
+$TC/venv/bin/aqt install-qt linux desktop 6.10.2 linux_gcc_64 -O $TC/Qt   # V27
+$TC/venv/bin/aqt install-qt linux desktop 6.8.2 linux_gcc_64 -O $TC/Qt    # V26, nur falls benötigt
 ```
 
 Fehlen die OpenGL-Entwicklerdateien im System, genügt es, die Pakete herunterzuladen und nach `$TC/sysroot` zu entpacken (`apt-get download libgl-dev libglx-dev libopengl-dev libegl-dev libgles-dev libglvnd-dev libvulkan-dev libxkbcommon-dev libx11-dev x11proto-dev`, dann je Paket `dpkg -x <paket>.deb $TC/sysroot`).
@@ -114,8 +122,10 @@ Die Vorgaben stehen in der Root-`CMakeLists.txt`:
 
 | Variable | Windows | Linux |
 |---|---|---|
-| `QT6_DIR` | `C:/Qt/6.8.3/msvc2022_64` | `~/.local/opt/opencirt-toolchain/Qt/6.8.2/gcc_64` |
-| `BRICSCAD_DIR` | `C:/Program Files/Bricsys/BricsCAD V26 de_DE` | `/opt/bricsys/bricscad/v26` |
+| `BRICSCAD_VERSION` | `27` (oder `26`) | `27` (oder `26`) |
+| `BRX_SDK_DIR` | `external/brx_sdk_v<NN>` | `external/brx_sdk_v<NN>` |
+| `QT6_DIR` | `C:/Qt/6.10.2/msvc2022_64` (V26: `C:/Qt/6.8.3/msvc2022_64`) | `~/.local/opt/opencirt-toolchain/Qt/6.10.2/gcc_64` (V26: `…/Qt/6.8.2/gcc_64`) |
+| `BRICSCAD_DIR` | `C:/Program Files/Bricsys/BricsCAD V27 en_US` (V26: `…/BricsCAD V26 de_DE`) | `/opt/bricsys/bricscad/v27` (V26: `…/v26`) |
 | `OC_SYSROOT` | – | `~/.local/opt/opencirt-toolchain/sysroot` (optional) |
 | `OC_PLUGIN_DEST` | – (keine zusätzliche Kopie) | – (optional, z. B. über die lokale `local_env.sh`) |
 
@@ -127,14 +137,14 @@ Abweichende Pfade lassen sich ohne Änderung der Datei setzen: beim Aufruf mit `
 
 1. BricsCAD starten
 2. Befehl: `APPLOAD`
-3. Zur Datei `opencirt-<Version>.brx` (Linux: `opencirt-<Version>.lrx`) navigieren und laden
+3. Zur Datei `opencirt-<Version>-v<NN>.brx` (Linux: `opencirt-<Version>-v<NN>.lrx`) für die eigene BricsCAD-Version navigieren und laden
 4. In der Kommandozeile erscheint: *"openCirt <Version> geladen. Befehl: OPENCIRT (Kurzform OC)"*
 
 ### Automatisch bei jedem Start
 
 1. `APPLOAD` aufrufen
 2. Unten auf *"Inhalt..."* (Startup Suite) klicken
-3. `opencirt-<Version>.brx` (Linux: `opencirt-<Version>.lrx`) zur Startup Suite hinzufügen. Nach einem Versionswechsel den Eintrag auf die neue Datei umstellen – der Dateiname trägt die Version.
+3. `opencirt-<Version>-v<NN>.brx` (Linux: `opencirt-<Version>-v<NN>.lrx`) zur Startup Suite hinzufügen. Nach einem Versionswechsel den Eintrag auf die neue Datei umstellen – der Dateiname trägt die Version. Jede BricsCAD-Version hat ihre eigene Startup Suite.
 
 ## Befehle
 
@@ -192,9 +202,9 @@ Die Bedienungsanleitung mit Projektstruktur, Erstellliste, Symbolen und allen Sc
 │   ├── copy_plugin.cmake       Legt das fertige Plugin ins Beispielprojekt (ggf. zusätzlich nach OC_PLUGIN_DEST)
 │   └── oc_summen_vergleich.py  Prüfwerkzeug für Summenblätter
 ├── external/
-│   └── brx_sdk/                BRX SDK (nicht im Repository)
+│   └── brx_sdk_v<NN>/          BRX SDK je BricsCAD-Version (nicht im Repository)
 ├── sample_project/
-│   ├── 00- BricsCAD Plugin/    Kompiliertes Plugin (opencirt-<Version>.brx für Windows, opencirt-<Version>.lrx für Linux)
+│   ├── 00- BricsCAD Plugin/    Kompiliertes Plugin (opencirt-<Version>-v<NN>.brx für Windows, opencirt-<Version>-v<NN>.lrx für Linux, je BricsCAD-Version)
 │   ├── 01- Referenzen/
 │   │   ├── BAS.csv             BAS-Konfiguration
 │   │   ├── GA_FL_VORLAGE.ods   GA-FL Vorlage
@@ -251,4 +261,4 @@ Kurzfassung: Nutzung für interne Zwecke, kommerzielle Projekte und Dienstleistu
 
 ## Technologie
 
-Entwickelt mit BRX SDK V26, Qt 6, C++17, CMake.
+Entwickelt mit BRX SDK V27 und V26, Qt 6, C++17, CMake.

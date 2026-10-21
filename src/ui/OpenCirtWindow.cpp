@@ -178,7 +178,7 @@ void OpenCirtWindow::onExportLog() {
 void OpenCirtWindow::showAbout() {
     QMessageBox::about(this, "Ueber openCirt",
         "openCirt " PLUGIN_VERSION "\n"
-        "GA-Planungsautomatisierung fuer BricsCAD V26 (VDI 3814)\n\n"
+        "GA-Planungsautomatisierung fuer BricsCAD V" BRICSCAD_VERSION_STR " (VDI 3814)\n\n"
         "Befehle: OPENCIRT, OC\n\n"
         "Qt 6 und BRX SDK - Lizenz: BSL 1.1");
 }

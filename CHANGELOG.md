@@ -5,6 +5,25 @@ Alle wesentlichen Änderungen am openCirt-Plugin werden in dieser Datei dokument
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei reinen Änderungen an Vorlagen, LISP-Skripten, Dokumentation oder Repo-Konfiguration.
 
+## [2.2.0] - 2026-10-21
+
+### Added
+- **BricsCAD V27.** openCirt wird für BricsCAD V27 gebaut und weiterhin für V26. Ein Plugin lädt nur in der BricsCAD-Version, für die es gebaut ist; deshalb steht die Version im Dateinamen: `opencirt-2.2.0-v27.lrx/.brx` für V27, `opencirt-2.2.0-v26.lrx/.brx` für V26. Im Beispielprojekt liegen beide. Der Über-Dialog nennt die BricsCAD-Version des Builds.
+
+### Changed
+- **PDF publizieren: Speicherort und Dateiname im Dialog.** Der Dialog „PDF publizieren" fragt Ordner (mit „Durchsuchen…") und Dateinamen ab. Vorgabe ist der zuletzt gewählte Wert, sonst wie bisher `06- Plot/<Projektordner>.pdf`; ohne Endung wird `.pdf` ergänzt. BricsCAD schreibt die PDF ohne weitere Rückfrage genau dorthin (Ziel und `PromptForDwfName=FALSE` stehen in der DSD), und die Erfolgsmeldung nennt diese Datei. Bisher ging die PDF immer nach `06- Plot/<Projektordner>.pdf`.
+
+### Technisches
+- Build: Die BricsCAD-Version wählt `BRICSCAD_VERSION` (26 oder 27, Vorgabe 27) als CMake- oder Umgebungsvariable, oder das Argument von `CLEAN_BUILD.sh 26` bzw. `CLEAN_BUILD.bat 26`. Davon hängen ab: der SDK-Ordner `external/brx_sdk_v<NN>` (sonst `external/brx_sdk`), die Bibliotheken `brx<NN>`, die Vorgaben für Qt (V26: 6.8.2 unter Linux, 6.8.3 unter Windows; V27: 6.10.2, das bringt V27 unter Linux und Windows mit) und für die Installation. CMake prüft an `brx_version.h`, ob das SDK zur gewählten Version gehört, und warnt unter Linux, wenn die Qt-Version nicht zu der von BricsCAD passt.
+- Nach dem Build werden im Beispielprojekt nur ältere Stände derselben BricsCAD-Version entfernt.
+- Optional legt der Build die fertige Datei zusätzlich in einen zweiten Ordner (`OC_PLUGIN_DEST`, CMake- oder Umgebungsvariable; `CLEAN_BUILD.sh` liest sie auch aus einer lokalen, nicht versionierten `local_env.sh`).
+- Die DSD für „PDF publizieren" folgt im Aufbau der Datei, die der PUBLISH-Dialog von BricsCAD selbst schreibt (`[SheetSet Properties]`, Schlüssel in `[PdfOptions]`). Die Markerdatei der Batch-Instanz enthält den vergebenen Pfad, statt die neueste PDF im Plot-Ordner zu suchen.
+
+### Geprüft (Linux)
+- Beispielprojekt (Projekt erstellen, IO-Liste, PDF publizieren) und Erstellliste-Vorlage (Projekt aufbauen, Projekt erstellen, PDF publizieren), jeweils mit `opencirt-2.2.0-v26.lrx` in BricsCAD V26.2.08 und mit `opencirt-2.2.0-v27.lrx` in V27.1.05 auf frischen Kopien desselben Stands: Auszüge aller Blätter gleich (11 Blätter mit 8.930 bzw. 751 Attributen; Werte, Einfügepunkte, Ausrichtungspunkte, Textmaße), IO-Belegungsliste byte-gleich, Log des Projektaufbaus zeilengleich, PDF (11 Seiten) nach Wortbestand, Lage und Pixeln gleich. Die Linux-Korrektur der Textausrichtung (`adjustTextAlignment`) wirkt in V27 unverändert.
+- PDF publizieren mit dem neuen Dialog unter V26 und V27: Die Batch-Instanz schreibt die PDF ohne Rückfrage an den gewählten Ort und beendet sich, die Erfolgsmeldung nennt die Datei.
+- Windows-Build steht aus.
+
 ## [2.1.0] - 2026-10-12
 
 ### Added

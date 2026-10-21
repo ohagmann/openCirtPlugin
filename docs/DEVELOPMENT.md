@@ -8,7 +8,7 @@ openCirt ist als BRX-Modul aufgebaut (Windows: `.brx`, Linux: `.lrx`), das als S
 
 ```
 ┌─────────────────────────────────────────┐
-│  BricsCAD V26 (Host-Applikation)        │
+│  BricsCAD V27/V26 (Host-Applikation)    │
 ├─────────────────────────────────────────┤
 │  plugin/   BRX Entry Point              │
 │            acrxEntryPoint, OPENCIRT/OC   │
@@ -81,7 +81,7 @@ Das Verzeichnis `src/mfc_stubs/` enthält leere Header-Dateien (`afxwin.h`, `afx
 
 BricsCAD für Linux unterscheidet sich an einigen Stellen so, dass der Quelltext darauf Rücksicht nehmen muss:
 
-**Qt ist schon da.** BricsCAD V26 für Linux bringt Qt 6.8.2 mit und hat beim Laden des Plugins bereits eine `QApplication`. Das Plugin benutzt sie mit (`OpenCirtPlugin.cpp`); unter Windows erzeugt es seine eigene. Gelöscht wird sie beim Entladen in keinem Fall: ein zweites Qt-Plugin im selben Prozess (batchTool) kann sie weiter benutzen, und BricsCAD räumt beim Beenden auf. Daraus folgt: Das Plugin muss gegen genau diese Qt-Version gebaut werden, es wird ohne RPATH gelinkt (`CMAKE_SKIP_RPATH`), und außer dem BRX-Einstiegspunkt sind alle Symbole verborgen (`-fvisibility=hidden`), damit sie nicht mit gleichnamigen des Hosts kollidieren.
+**Qt ist schon da.** BricsCAD für Linux bringt Qt mit (V27: 6.10.2, V26: 6.8.2) und hat beim Laden des Plugins bereits eine `QApplication`. Das Plugin benutzt sie mit (`OpenCirtPlugin.cpp`); unter Windows erzeugt es seine eigene. Gelöscht wird sie beim Entladen in keinem Fall: ein zweites Qt-Plugin im selben Prozess (batchTool) kann sie weiter benutzen, und BricsCAD räumt beim Beenden auf. Daraus folgt: Das Plugin muss gegen genau diese Qt-Version gebaut werden, es wird ohne RPATH gelinkt (`CMAKE_SKIP_RPATH`), und außer dem BRX-Einstiegspunkt sind alle Symbole verborgen (`-fvisibility=hidden`), damit sie nicht mit gleichnamigen des Hosts kollidieren.
 
 **Dateidialoge.** BricsCAD liefert keine Plattform-Themen für Qt mit; `QFileDialog` erscheint unter Linux deshalb in der Qt-eigenen Form, nicht als GTK-Dialog. BricsCADs eigene Dialoge (z. B. der Dateiname beim PDF-Publish) sind GTK-Dialoge.
 
@@ -98,10 +98,11 @@ BricsCAD für Linux unterscheidet sich an einigen Stellen so, dass der Quelltext
 ## Build-Konfiguration
 
 Die Root-`CMakeLists.txt` ist die einzige Build-Datei. Sie definiert:
-- Qt6-Pfad, BRX-SDK-Pfad, BricsCAD-Installationspfad
+- die BricsCAD-Version (`BRICSCAD_VERSION`, 26 oder 27, Vorgabe 27) und davon abgeleitet Qt6-Pfad, BRX-SDK-Pfad und BricsCAD-Installationspfad; eine Prüfung, ob das SDK zur Version gehört (`brx_version.h`)
 - Compiler-Flags inkl. Force-Include von windows_fix.h
 - Alle Source-/Header-Dateien explizit (kein GLOB) – neue Dateien müssen in `PLUGIN_SOURCES` bzw. `PLUGIN_HEADERS` eingetragen werden
-- Linker-Konfiguration gegen brx26.lib und Qt6; unter Linux gegen `libbrx26.so`, `libTD_Alloc.so`, `libTD_Root.so` der Installation und mit `--whole-archive` gegen `libdrx_entrypoint.a`
+- Linker-Konfiguration gegen brx<NN>.lib und Qt6; unter Linux gegen `libbrx<NN>.so`, `libTD_Alloc.so`, `libTD_Root.so` der Installation und mit `--whole-archive` gegen `libdrx_entrypoint.a`
+- das Makro `BRICSCAD_VERSION_STR` (z. B. `"27"`) für Texte und Bibliotheksnamen im Quelltext
 
 ### Lokale Pfade anpassen
 
@@ -109,11 +110,12 @@ Die Root-`CMakeLists.txt` ist die einzige Build-Datei. Sie definiert:
 
 | Variable | Windows | Linux |
 |---|---|---|
-| `QT6_DIR` | `C:/Qt/6.8.3/msvc2022_64` | `~/.local/opt/opencirt-toolchain/Qt/6.8.2/gcc_64` |
-| `BRICSCAD_DIR` | `C:/Program Files/Bricsys/BricsCAD V26 de_DE` | `/opt/bricsys/bricscad/v26` |
+| `BRICSCAD_VERSION` | `27` (oder `26`) | `27` (oder `26`) |
+| `QT6_DIR` | `C:/Qt/6.10.2/msvc2022_64` (V26: `C:/Qt/6.8.3/msvc2022_64`) | `~/.local/opt/opencirt-toolchain/Qt/6.10.2/gcc_64` (V26: `…/Qt/6.8.2/gcc_64`) |
+| `BRICSCAD_DIR` | `C:/Program Files/Bricsys/BricsCAD V27 en_US` (V26: `…/BricsCAD V26 de_DE`) | `/opt/bricsys/bricscad/v27` (V26: `…/v26`) |
 | `OC_SYSROOT` | – | `~/.local/opt/opencirt-toolchain/sysroot` (lokal entpackte Entwicklerpakete, optional) |
 
-Sie lassen sich überschreiben, ohne die Datei zu ändern: `cmake -DQT6_DIR=…` oder eine gleichnamige Umgebungsvariable. Das BRX SDK wird immer unter `external/brx_sdk` erwartet.
+Sie lassen sich überschreiben, ohne die Datei zu ändern: `cmake -DQT6_DIR=…` oder eine gleichnamige Umgebungsvariable. Das BRX SDK wird unter `external/brx_sdk_v<NN>` erwartet (sonst `external/brx_sdk`), `BRX_SDK_DIR` übersteuert. Ein Plugin lädt nur in der BricsCAD-Version, für die es gebaut ist; der Dateiname trägt sie deshalb (`…-v27.lrx`).
 
 ### Build und laufendes BricsCAD
 

@@ -1,8 +1,8 @@
 ﻿# openCirt – Bedienungsanleitung
 
-**Version:** 2.0  
+**Version:** 2.2  
 **Stand:** Oktober 2026  
-**Für:** BricsCAD V26 mit dem openCirt-Plugin ab Version 2.0
+**Für:** BricsCAD V27 oder V26 mit dem openCirt-Plugin ab Version 2.2
 
 ---
 
@@ -43,21 +43,21 @@ Der gesamte Ablauf von der Schema-Zeichnung bis zum fertigen PDF-Planungspaket i
 
 ### 2.1 Plugin laden
 
-1. Die Datei `opencirt-<Version>.brx` (z.B. `opencirt-2.0.0.brx`) aus dem Ordner `00- BricsCAD Plugin/00- Windows Version/` in einen festen Speicherort kopieren (z.B. `C:\BricsCAD Plugins\`).
-2. BricsCAD V26 starten.
+1. Die Datei `opencirt-<Version>-v<NN>.brx` für die eigene BricsCAD-Version (z.B. `opencirt-2.2.0-v27.brx` für V27, `opencirt-2.2.0-v26.brx` für V26) aus dem Ordner `00- BricsCAD Plugin/00- Windows Version/` in einen festen Speicherort kopieren (z.B. `C:\BricsCAD Plugins\`). Ein Plugin lädt nur in der BricsCAD-Version, für die es gebaut ist.
+2. BricsCAD starten.
 3. Befehl `APPLOAD` eingeben.
-4. Zur Datei `opencirt-<Version>.brx` navigieren und „Laden" klicken.
+4. Zur Datei `opencirt-<Version>-v<NN>.brx` navigieren und „Laden" klicken.
 5. In der Kommandozeile erscheint: *„openCirt <Version> geladen. Befehl: OPENCIRT (Kurzform OC)"*
 
-**Linux:** Die Datei heißt dort `opencirt-<Version>.lrx` und liegt in `00- BricsCAD Plugin/01- Linux Version/`. Sie wird genauso über `APPLOAD` geladen; als Speicherort eignet sich zum Beispiel `~/BricsCAD Plugins/`. Weitere Dateien sind nicht nötig, das Plugin benutzt die Qt-Bibliotheken, die BricsCAD mitbringt. Zum Umwandeln der GA-FL-Referenz (ODS) braucht das Plugin LibreOffice (Abschnitt 8.3).
+**Linux:** Die Datei heißt dort `opencirt-<Version>-v<NN>.lrx` und liegt in `00- BricsCAD Plugin/01- Linux Version/`. Sie wird genauso über `APPLOAD` geladen; als Speicherort eignet sich zum Beispiel `~/BricsCAD Plugins/`. Weitere Dateien sind nicht nötig, das Plugin benutzt die Qt-Bibliotheken, die BricsCAD mitbringt. Zum Umwandeln der GA-FL-Referenz (ODS) braucht das Plugin LibreOffice (Abschnitt 8.3).
 
 ### 2.2 Automatisch bei jedem Start laden
 
 1. `APPLOAD` aufrufen.
 2. Unten auf „Inhalt..." (Startup Suite) klicken.
-3. `opencirt-<Version>.brx` (Linux: `opencirt-<Version>.lrx`) zur Startup Suite hinzufügen.
+3. `opencirt-<Version>-v<NN>.brx` (Linux: `opencirt-<Version>-v<NN>.lrx`) zur Startup Suite hinzufügen.
 
-Der Dateiname trägt die Version. Nach einem Versionswechsel den Eintrag in der Startup Suite auf die neue Datei umstellen; die alte Datei kann weg.
+Der Dateiname trägt die Version des Plugins und die BricsCAD-Version. Nach einem Versionswechsel den Eintrag in der Startup Suite auf die neue Datei umstellen; die alte Datei kann weg. Jede BricsCAD-Version hat ihre eigene Startup Suite – wer V26 und V27 nebeneinander nutzt, trägt in jeder die passende Datei ein.
 
 ### 2.3 Plugin öffnen
 
@@ -483,7 +483,7 @@ Grundlage ist die Blattvorlage `OC_VORLAGE_DIN_A2_INHALTSVERZEICHNIS_V1.dwg`, di
 
 ### 10.2 PDF-Publish
 
-Nach dem Inhaltsverzeichnis wird automatisch ein Multi-Sheet-PDF im Ordner `06- Plot/` erzeugt. Das PDF enthält alle Zeichnungen in der korrekten Reihenfolge:
+Nach dem Inhaltsverzeichnis wird automatisch ein Multi-Sheet-PDF erzeugt, vorgegeben im Ordner `06- Plot/` unter dem Namen des Projektordners. Das PDF enthält alle Zeichnungen in der korrekten Reihenfolge:
 
 1. Projekt-Deckblatt
 2. Inhaltsverzeichnis
@@ -491,7 +491,7 @@ Nach dem Inhaltsverzeichnis wird automatisch ein Multi-Sheet-PDF im Ordner `06- 
 
 ### 10.3 Ausführung
 
-Auf **„PDF publizieren"** klicken. Inhaltsverzeichnis und PDF werden nacheinander erzeugt. Das Inhaltsverzeichnis entsteht ohne Bildaufbau; für das PDF startet eine zweite BricsCAD-Instanz, die Dateiname und Ordner abfragt und die Blätter plottet.
+Auf **„PDF publizieren"** klicken. Der Dialog zeigt die Zahl der Blätter und fragt **Speicherort** (mit „Durchsuchen…") und **Dateiname** ab. Vorgabe ist der zuletzt gewählte Wert, beim ersten Mal `06- Plot/<Projektordner>.pdf`; ohne Endung wird `.pdf` ergänzt. Nach „OK" werden Inhaltsverzeichnis und PDF nacheinander erzeugt. Das Inhaltsverzeichnis entsteht ohne Bildaufbau; für das PDF startet eine zweite BricsCAD-Instanz, die die Blätter ohne weitere Rückfrage in die gewählte Datei plottet und sich danach beendet. Eine Meldung nennt am Ende die fertige Datei.
 
 ---
 

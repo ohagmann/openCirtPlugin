@@ -1,14 +1,19 @@
 @echo off
+setlocal
 REM ===========================================================
-REM Clean Build - opencirt-<Version>.brx (Windows)
-REM   BRX SDK: external\brx_sdk oder Umgebungsvariable BRX_SDK_DIR
+REM Clean Build - opencirt-<Version>-v<NN>.brx (Windows)
+REM   CLEAN_BUILD.bat            fuer BricsCAD V27
+REM   CLEAN_BUILD.bat 26         fuer BricsCAD V26
+REM   /force                     BricsCAD ohne Rueckfrage beenden
+REM   BRX SDK: external\brx_sdk_v<NN> oder Umgebungsvariable BRX_SDK_DIR
+REM   Qt: C:\Qt\<Version>\msvc2022_64 (V26: 6.8.3, V27: 6.10.2) oder QT6_DIR
 REM ===========================================================
 
 cd /d "%~dp0"
 
 echo.
 echo ============================================================
-echo Clean Build - opencirt-^<Version^>.brx (Windows)
+echo Clean Build - opencirt-^<Version^>-v^<NN^>.brx (Windows)
 echo ============================================================
 echo.
 
@@ -17,7 +22,11 @@ echo ============================================================
 echo [STEP 0] Laufende BricsCAD-Instanzen beenden
 echo ============================================================
 set "CLOSE_ARGS="
-if /I "%~1"=="/force" set "CLOSE_ARGS=-Force"
+for %%A in (%*) do (
+    if /I "%%~A"=="/force" set "CLOSE_ARGS=-Force"
+    if "%%~A"=="26" set "BRICSCAD_VERSION=26"
+    if "%%~A"=="27" set "BRICSCAD_VERSION=27"
+)
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\Close-BricsCAD.ps1" %CLOSE_ARGS%
 if errorlevel 1 (
     echo.
@@ -77,7 +86,7 @@ echo ============================================================
 echo ✅ BUILD SUCCESSFUL!
 echo ============================================================
 echo.
-echo Output: build_windows\Release\opencirt-^<Version^>.brx
+echo Output: build_windows\Release\opencirt-^<Version^>-v^<NN^>.brx
 echo.
 dir /b build_windows\Release\opencirt-*.brx
 echo.

@@ -2,7 +2,10 @@
 # Optional wird es in einen zweiten Ordner kopiert (OC_DEST_DIR2, z.B. ein
 # Projektordner); nur wirksam, wenn OC_DEST_DIR2 gesetzt und vorhanden ist.
 # Aufruf aus CMakeLists.txt nach dem Bauen:
-#   cmake -DOC_MODULE=<Datei> -DOC_DEST_DIR=<Ordner> -DOC_PREFIX=opencirt -DOC_SUFFIX=<.brx|.lrx> [-DOC_DEST_DIR2=<Ordner>] -P copy_plugin.cmake
+#   cmake -DOC_MODULE=<Datei> -DOC_DEST_DIR=<Ordner> -DOC_PREFIX=opencirt -DOC_TAG=-v<NN> -DOC_SUFFIX=<.brx|.lrx> [-DOC_DEST_DIR2=<Ordner>] -P copy_plugin.cmake
+# OC_TAG (z.B. -v27) begrenzt das Entfernen auf Staende derselben
+# BricsCAD-Version; Dateien anderer Versionen und alte Namen ohne Kennung
+# bleiben liegen.
 if(NOT OC_MODULE OR NOT OC_DEST_DIR OR NOT OC_PREFIX OR NOT OC_SUFFIX)
     message(FATAL_ERROR "copy_plugin.cmake: OC_MODULE, OC_DEST_DIR, OC_PREFIX und OC_SUFFIX angeben")
 endif()
@@ -14,7 +17,7 @@ get_filename_component(_name "${OC_MODULE}" NAME)
 # Vorhandene Dateien werden geloescht, nicht ueberschrieben: eine Datei, die
 # ein laufendes BricsCAD geladen hat, darf nicht an Ort und Stelle veraendert
 # werden. Nach dem Loeschen behaelt BricsCAD seinen alten Stand.
-file(GLOB _old "${OC_DEST_DIR}/${OC_PREFIX}*${OC_SUFFIX}")
+file(GLOB _old "${OC_DEST_DIR}/${OC_PREFIX}-*${OC_TAG}${OC_SUFFIX}")
 foreach(_f IN LISTS _old)
     get_filename_component(_n "${_f}" NAME)
     file(REMOVE "${_f}")
@@ -28,7 +31,7 @@ message(STATUS "Abgelegt: ${OC_DEST_DIR}/${_name}")
 # Zweites Ziel (optional): nur, wenn gesetzt und der Ordner vorhanden ist.
 # Dasselbe Rausloeschen aelterer Staende wie oben.
 if(OC_DEST_DIR2 AND NOT OC_DEST_DIR2 STREQUAL "" AND EXISTS "${OC_DEST_DIR2}")
-    file(GLOB _old "${OC_DEST_DIR2}/${OC_PREFIX}*${OC_SUFFIX}")
+    file(GLOB _old "${OC_DEST_DIR2}/${OC_PREFIX}-*${OC_TAG}${OC_SUFFIX}")
     foreach(_f IN LISTS _old)
         get_filename_component(_n "${_f}" NAME)
         file(REMOVE "${_f}")
