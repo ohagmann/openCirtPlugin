@@ -5277,6 +5277,9 @@ void OpenCirtTab::onPublishPdf() {
  * @brief Frage die PDF-Ausgabe (Ordner, Dateiname) ab.
  *
  * Beide Felder sind leer: openCirt gibt nichts vor und merkt sich nichts.
+ * Unter den Feldern stehen die PDF, die schon im Speicherort liegen (neueste
+ * oben); ein Klick uebernimmt den Namen ohne Endung ins Feld Dateiname, wo er
+ * sich weiter bearbeiten laesst. Tippen im Dateinamen filtert die Liste.
  * Beim OK existiert der Ordner und der Name traegt die Endung .pdf. Liegt
  * dort schon eine Datei, wird hier gefragt, ob sie ersetzt werden soll;
  * launchPublish loescht sie dann vor dem Start. false bei Abbrechen.
@@ -5285,7 +5288,9 @@ bool OpenCirtTab::askPublishTarget(int sheetCount, int tocPageCount,
                                    QString& outDir, QString& outName) {
     QDialog dlg(this);
     dlg.setWindowTitle("PDF publizieren");
-    
+    dlg.setSizeGripEnabled(true);
+    dlg.resize(1000, 600);
+
     QVBoxLayout* layout = new QVBoxLayout(&dlg);
     layout->addWidget(new QLabel(
         QString("%1 Zeichnungen + %2 Inhaltsseiten = %3 Blaetter\n"
@@ -5302,24 +5307,71 @@ bool OpenCirtTab::askPublishTarget(int sheetCount, int tocPageCount,
     QPushButton* dirBrowse = new QPushButton("Durchsuchen...", dirRow);
     dirRowLayout->addWidget(dirBrowse);
     QLineEdit* nameEdit = new QLineEdit(&dlg);
-    
-    QFormLayout* form = new QFormLayout(&dlg);
+
+    QFormLayout* form = new QFormLayout();
+    // Felder ueber die ganze Dialogbreite, damit lange Projektpfade lesbar sind
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     form->addRow("Speicherort:", dirRow);
     form->addRow("Dateiname:", nameEdit);
     layout->addLayout(form);
+
+    layout->addWidget(new QLabel(
+        "Vorhandene PDF im Speicherort - Klick uebernimmt den Namen, "
+        "Eingabe im Dateinamen filtert die Liste:", &dlg));
+    QTreeWidget* pdfList = new QTreeWidget(&dlg);
+    pdfList->setColumnCount(2);
+    pdfList->setHeaderLabels({"Datei", "Geaendert"});
+    pdfList->setRootIsDecorated(false);
+    pdfList->setSelectionMode(QAbstractItemView::SingleSelection);
+    pdfList->header()->setStretchLastSection(false);
+    pdfList->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    pdfList->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    layout->addWidget(pdfList, 1);
     layout->addWidget(new QLabel("Ohne Dateiendung wird .pdf ergaenzt.", &dlg));
-    
+
+    // PDF des Speicherorts, neueste oben. Der Filter ist ein Teilstring des
+    // Dateinamens ohne Ruecksicht auf Gross-/Kleinschreibung (wie die
+    // Layerliste im batchTool).
+    auto fillPdfList = [pdfList, dirEdit, nameEdit]() {
+        pdfList->clear();
+        const QString dir = dirEdit->text().trimmed();
+        if (dir.isEmpty()) return;
+        const QString filter = nameEdit->text().trimmed();
+        const QFileInfoList pdfs =
+            QDir(dir).entryInfoList({"*.pdf"}, QDir::Files, QDir::Time);
+        for (const QFileInfo& fi : pdfs) {
+            if (!fi.fileName().contains(filter, Qt::CaseInsensitive)) continue;
+            QTreeWidgetItem* item = new QTreeWidgetItem(pdfList);
+            item->setText(0, fi.fileName());
+            item->setText(1, fi.lastModified().toString("dd.MM.yyyy HH:mm"));
+        }
+    };
+    // Ein getippter Pfad wird erst beim Verlassen des Felds gelesen, nicht
+    // bei jedem Zeichen (halbe Netzwerkpfade koennten sonst haengen).
+    QObject::connect(dirEdit, &QLineEdit::editingFinished, &dlg, fillPdfList);
+    // textEdited, nicht textChanged: der Klick in die Liste setzt den Namen
+    // per setText und laesst die Liste dabei stehen.
+    QObject::connect(nameEdit, &QLineEdit::textEdited, &dlg, fillPdfList);
+    QObject::connect(pdfList, &QTreeWidget::itemClicked, &dlg,
+                     [nameEdit](QTreeWidgetItem* item) {
+        nameEdit->setText(QFileInfo(item->text(0)).completeBaseName());
+        nameEdit->setFocus();
+    });
+
     // "Durchsuchen..." beginnt im Plot-Ordner des Projekts (nur als
     // Startpunkt der Auswahl, das Feld bleibt leer)
     const QString plotDir = m_projectRoot + "/06- Plot";
     const QString browseStart = QDir(plotDir).exists() ? plotDir : m_projectRoot;
     QObject::connect(dirBrowse, &QPushButton::clicked, &dlg,
-                     [&dlg, dirEdit, browseStart]() {
+                     [&dlg, dirEdit, browseStart, fillPdfList]() {
         QString start = dirEdit->text().trimmed();
         if (start.isEmpty()) start = browseStart;
         QString picked = QFileDialog::getExistingDirectory(
             &dlg, "Speicherort waehlen", start);
-        if (!picked.isEmpty()) dirEdit->setText(picked);
+        if (!picked.isEmpty()) {
+            dirEdit->setText(picked);
+            fillPdfList();
+        }
     });
     
     QDialogButtonBox* buttons =

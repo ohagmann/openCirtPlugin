@@ -5,6 +5,15 @@ Alle wesentlichen Änderungen am openCirt-Plugin werden in dieser Datei dokument
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei reinen Änderungen an Vorlagen, LISP-Skripten, Dokumentation oder Repo-Konfiguration.
 
+## [2.2.1] - 2026-10-29
+
+### Changed
+- **PDF publizieren: vorhandene PDF anklicken.** Der Dialog „PDF publizieren" zeigt unter Speicherort und Dateiname die PDF, die schon im gewählten Speicherort liegen, die neueste oben, mit Änderungsdatum. Ein Klick auf eine Zeile übernimmt deren Namen ohne Endung ins Feld „Dateiname", wo er sich weiter bearbeiten lässt (z. B. ein neuer Index). Tippen im Dateinamen filtert die Liste auf Dateien, deren Name die Eingabe enthält, ohne Rücksicht auf Groß-/Kleinschreibung. Die Liste folgt dem Speicherort nach „Durchsuchen…" oder beim Verlassen des Felds. Weiterhin wird nichts vorgegeben oder gemerkt; bleibt der übernommene Name unverändert, kommt beim OK die bekannte Frage „PDF ersetzen".
+- Der Dialog ist größer (1000 × 600, in der Größe veränderbar), Speicherort und Dateiname laufen über die ganze Breite, sodass lange Projektpfade lesbar bleiben.
+
+### Geprüft (Linux)
+- Beispielprojekt mit `opencirt-2.2.1-v27.lrx` in BricsCAD V27.1.05, Plot-Ordner mit fünf PDF (eine mit Endung `.PDF`) und einer Textdatei: Die Liste zeigt nur die PDF, die neueste oben, und folgt dem Speicherort (getippt und über „Durchsuchen…"). Tippen von „plaene" lässt die zwei passenden Dateien stehen; ein Klick übernimmt den Namen ohne Endung, Weitertippen ändert ihn (Index b → c) und filtert die Liste mit. Unveränderter Name → Frage „PDF ersetzen", „Nein" führt zurück; neuer Name → Publish schreibt die PDF (2 Seiten) dorthin, die Batch-Instanz beendet sich.
+
 ## [2.2.0] - 2026-10-21
 
 ### Added
