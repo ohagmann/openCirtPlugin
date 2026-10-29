@@ -13,6 +13,7 @@ Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei re
 
 ### Geprüft (Linux)
 - Beispielprojekt mit `opencirt-2.2.1-v27.lrx` in BricsCAD V27.1.05, Plot-Ordner mit fünf PDF (eine mit Endung `.PDF`) und einer Textdatei: Die Liste zeigt nur die PDF, die neueste oben, und folgt dem Speicherort (getippt und über „Durchsuchen…"). Tippen von „plaene" lässt die zwei passenden Dateien stehen; ein Klick übernimmt den Namen ohne Endung, Weitertippen ändert ihn (Index b → c) und filtert die Liste mit. Unveränderter Name → Frage „PDF ersetzen", „Nein" führt zurück; neuer Name → Publish schreibt die PDF (2 Seiten) dorthin, die Batch-Instanz beendet sich.
+- Windows-Build für V27 am 2026-10-29 vom Anwender gebaut (MSVC 14.44, Qt 6.10.3): `opencirt-2.2.1-v27.brx` liegt im Beispielprojekt (bindet `brx27.dll` und Qt6 ein) und ersetzt `opencirt-2.2.0-v27.brx`.
 
 ## [2.2.0] - 2026-10-21
 
