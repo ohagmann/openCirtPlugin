@@ -88,3 +88,5 @@ Desktop.ini
 local_env.sh
 
 build_linux/
+build_windows_cross/
+build_dev/

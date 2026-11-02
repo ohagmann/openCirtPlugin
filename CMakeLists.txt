@@ -129,13 +129,23 @@ if(NOT EXISTS ${QT6_DIR})
     message(FATAL_ERROR "Qt6 not found at ${QT6_DIR}")
 endif()
 
-if(NOT EXISTS ${BRICSCAD_DIR})
+# Unter Windows wird BricsCAD selbst nicht gebraucht (die Import-Bibliotheken
+# liegen im SDK); beim Windows-Build unter Linux (CROSS_BUILD_WINDOWS.sh) gibt
+# es den Ordner nicht.
+if(WIN32 AND CMAKE_CROSSCOMPILING)
+    set(_oc_need_bricscad FALSE)
+else()
+    set(_oc_need_bricscad TRUE)
+endif()
+if(_oc_need_bricscad AND NOT EXISTS ${BRICSCAD_DIR})
     message(FATAL_ERROR "BricsCAD V${BRICSCAD_VERSION} not found at ${BRICSCAD_DIR}")
 endif()
 
 message(STATUS "✅ Qt6: ${QT6_DIR}")
 message(STATUS "✅ BRX SDK: ${BRX_SDK_PATH}")
-message(STATUS "✅ BricsCAD V${BRICSCAD_VERSION}: ${BRICSCAD_DIR}")
+if(_oc_need_bricscad)
+    message(STATUS "✅ BricsCAD V${BRICSCAD_VERSION}: ${BRICSCAD_DIR}")
+endif()
 
 # ============================================================================
 # Linux: Grundeinstellungen
@@ -166,6 +176,24 @@ endif()
 # ============================================================================
 list(PREPEND CMAKE_PREFIX_PATH "${QT6_DIR}")
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
+# Windows-Build unter Linux (CROSS_BUILD_WINDOWS.sh): das Windows-Qt bringt
+# moc/uic/rcc als .exe mit; benutzt werden die Werkzeuge des Linux-Qt derselben
+# Reihe aus QT_HOST_PATH (gleiche moc-Ausgabe innerhalb einer Qt-Reihe).
+if(WIN32 AND CMAKE_CROSSCOMPILING)
+    if(NOT DEFINED QT_HOST_PATH OR NOT EXISTS "${QT_HOST_PATH}/libexec/moc")
+        message(FATAL_ERROR "QT_HOST_PATH muss auf ein Linux-Qt mit libexec/moc zeigen (CROSS_BUILD_WINDOWS.sh).")
+    endif()
+    foreach(_oc_tool moc uic rcc)
+        if(TARGET Qt6::${_oc_tool})
+            set_target_properties(Qt6::${_oc_tool} PROPERTIES
+                IMPORTED_LOCATION "${QT_HOST_PATH}/libexec/${_oc_tool}"
+                IMPORTED_LOCATION_RELEASE "${QT_HOST_PATH}/libexec/${_oc_tool}"
+                IMPORTED_LOCATION_RELWITHDEBINFO "${QT_HOST_PATH}/libexec/${_oc_tool}"
+                IMPORTED_LOCATION_DEBUG "${QT_HOST_PATH}/libexec/${_oc_tool}")
+        endif()
+    endforeach()
+    message(STATUS "✅ Qt-Werkzeuge (moc/uic/rcc): ${QT_HOST_PATH}/libexec")
+endif()
 # Linux: Qt-Version mit der von BricsCAD vergleichen (libQt6Core.so.6.x.y)
 if(NOT WIN32)
     file(GLOB _oc_bcad_qt "${BRICSCAD_DIR}/libQt6Core.so.6.*.*")
@@ -334,8 +362,18 @@ if(MSVC)
         /Zc:__cplusplus
         /wd4251
         /wd4275
-        /FI"${CMAKE_CURRENT_SOURCE_DIR}/src/windows_fix.h"
     )
+    if(CMAKE_CROSSCOMPILING)
+        # clang-cl unter Linux (Ninja): CMake setzt die Anfuehrungszeichen
+        # selbst, eigene kaemen als Teil des Dateinamens an
+        target_compile_options(opencirt_plugin PRIVATE
+            "/FI${CMAKE_CURRENT_SOURCE_DIR}/src/windows_fix.h"
+        )
+    else()
+        target_compile_options(opencirt_plugin PRIVATE
+            /FI"${CMAKE_CURRENT_SOURCE_DIR}/src/windows_fix.h"
+        )
+    endif()
 
     set_target_properties(opencirt_plugin PROPERTIES
         VS_PLATFORM_TOOLSET "v143"
