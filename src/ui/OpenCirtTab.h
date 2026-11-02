@@ -36,6 +36,8 @@
 #include <functional>
 #include <memory>
 
+#include "OpenCirtEngine.h"   // OcLlScan (reine Qt-Typen)
+
 QT_BEGIN_NAMESPACE
 class QCheckBox;
 class QPushButton;
@@ -93,6 +95,7 @@ struct SourceDrawingInfo {
 struct OpenCirtConfig {
     bool includeBmk = true;
     bool includeBas = true;
+    bool includeLl = false;     ///< Anlagenleistungslisten im Gesamtlauf
     QString lastProjectRoot;
     
     // Paths (relative to project root)
@@ -108,6 +111,10 @@ struct OpenCirtConfig {
     static constexpr const char* GA_FL_VORLAGE_DWG = "OC_VORLAGE_GA_FL.dwg";
     static constexpr const char* CONFIG_FILE = "opencirt_config.json";
     static constexpr const char* PLANKOPF_CSV = "plankopfdaten.csv";
+    static constexpr const char* EINSPEISUNGEN_CSV = "Einspeisungen.csv";
+
+    // Anlagenleistungsliste: Blattvorlage in 04- Vorlagen (hoechste Version)
+    static constexpr const char* LEISTUNGSLISTE_VORLAGE_PATTERN = "OC_VORLAGE_LEISTUNGSLISTE*.dwg";
     
     // GA-FL Block name in template
     static constexpr const char* GA_FL_BLOCK_NAME = "VDI3814_GA_FL_V_1_0";
@@ -207,6 +214,8 @@ private:
         int gaFl = 0;           ///< GA-FL-Blaetter
         int summen = 0;         ///< Summenblaetter
         int textbreiten = 0;    ///< angepasste Texte
+        int leistungslisten = 0;   ///< Blaetter der Anlagenleistungslisten
+        int llZeilen = 0;          ///< Stempelzeilen in den Listen
     };
 
     /// Summenblatt, das der Gesamtlauf erzeugt
@@ -337,6 +346,26 @@ private:
     
     /// Phase 0: Cleanup - delete existing GA-FL and summary sheets
     bool cleanupGaFl();
+
+    // ================================================================
+    // Anlagenleistungsliste je ASP
+    // ================================================================
+
+    /// Blattvorlage OC_VORLAGE_LEISTUNGSLISTE_V<n>.dwg in 04- Vorlagen
+    QString findLeistungslisteVorlage();
+
+    /// Erzeugte Listenblaetter (*_Leistungsliste_*.dwg) loeschen
+    int cleanupLeistungslisten();
+
+    /// Vor dem Lauf: alle Leistungsstempel lesen und Stempel ohne Geraet
+    /// sammeln. false, wenn der Anwender abbricht.
+    bool precheckLeistungsstempel(const QStringList& dwgFiles, bool doBas);
+
+    /// Nach den Summen: je ASP die Listenblaetter aus m_llScans erzeugen
+    void createLeistungslisten(RunCounts& counts);
+
+    /// Pfad als Schluessel (Trenner /, ohne Gross-/Kleinschreibung)
+    static QString pathKey(const QString& path);
     
     /// Intermediate: Read extracted CSVs and plan GA-FL generation
     QVector<SourceDrawingInfo> readExtractedData(const QStringList& dwgFiles);
@@ -479,6 +508,7 @@ private:
     
     QCheckBox* m_chkIncludeBmk;
     QCheckBox* m_chkIncludeBas;
+    QCheckBox* m_chkIncludeLl = nullptr;   ///< Anlagenleistungslisten
     
     QProgressBar* m_progressBar;
     
@@ -507,6 +537,10 @@ private:
 
     /// Pfade dieser Summenblaetter, fuer die Textbreitenanpassung
     QStringList m_plannedSummarySheets;
+
+    /// Leistungsstempel je Quellzeichnung (Schluessel pathKey), gelesen im
+    /// Gesamtlauf nach der BAS-Generierung
+    QMap<QString, OcLlScan> m_llScans;
 
     // Laufender Lauf: Sperre der Schaltflaechen und Fortschritt
     bool m_running = false;

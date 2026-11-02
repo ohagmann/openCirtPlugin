@@ -33,6 +33,7 @@
 #include <QStringDecoder>
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <vector>
 
@@ -2064,6 +2065,583 @@ OcTextWidthResult OcDrawing::textBreitenAnpassen()
         }
     }
 
+    return result;
+}
+
+// ============================================================================
+// Anlagenleistungsliste
+// ============================================================================
+
+namespace {
+
+const double kLlInfinity = 1e300;
+
+/// Layer, auf dem die Linie Stempel -> Geraet liegt
+const char* const kLlLinkLayer = "GA-LEISTUNGSSTEMPEL-VERBINDUNG";
+
+/// Abstand zwischen Liste und Plankopf
+const double kLlPlankopfGap = 2.5;
+
+double dist2d(const AcGePoint3d& a, const AcGePoint3d& b)
+{
+    return std::hypot(a.x - b.x, a.y - b.y);
+}
+
+/// Abstand eines Punkts zu einem Rechteck (0 innen), nur x/y
+double boxDistance(const AcGePoint3d& p, const AcDbExtents& e)
+{
+    const double dx = std::max({e.minPoint().x - p.x, 0.0, p.x - e.maxPoint().x});
+    const double dy = std::max({e.minPoint().y - p.y, 0.0, p.y - e.maxPoint().y});
+    return std::hypot(dx, dy);
+}
+
+/// Name eines Layers in Grossschreibung
+QString layerUpper(const AcDbObjectId& layerId)
+{
+    QString name;
+    AcDbLayerTableRecord* pLayer = nullptr;
+    if (acdbOpenObject(pLayer, layerId, AcDb::kForRead) == Acad::eOk && pLayer) {
+        const ACHAR* raw = nullptr;
+        pLayer->getName(raw);
+        name = OcEngine::lispUpper(fromAchar(raw));
+        pLayer->close();
+    }
+    return name;
+}
+
+/// Kleinster Abstand von p zur sichtbaren Geometrie eines Blocks: zerlegte
+/// Kopien ohne Texte und ohne die ausgeblendeten Teile parametrischer Bloecke
+/// (Layer *SUPPRESS). Verschachtelte Bloecke werden mit zerlegt.
+double visibleDistance(const AcDbBlockReference* pRef, const AcGePoint3d& p,
+                       const AcDbObjectId& suppressLayer, int depth = 0)
+{
+    double best = kLlInfinity;
+    AcDbVoidPtrArray parts;
+    if (pRef->explode(parts) != Acad::eOk) return best;
+    for (int i = 0; i < parts.length(); ++i) {
+        AcDbEntity* pEnt = static_cast<AcDbEntity*>(parts[i]);
+        if (!pEnt) continue;
+        const bool hidden = !suppressLayer.isNull() && pEnt->layerId() == suppressLayer;
+        if (!hidden && !pEnt->isKindOf(AcDbText::desc()) && !pEnt->isKindOf(AcDbMText::desc())) {
+            if (pEnt->isKindOf(AcDbBlockReference::desc())) {
+                if (depth < 4) {
+                    best = std::min(best, visibleDistance(AcDbBlockReference::cast(pEnt), p,
+                                                          suppressLayer, depth + 1));
+                }
+            } else if (pEnt->isKindOf(AcDbCurve::desc())) {
+                AcGePoint3d onCurve;
+                if (AcDbCurve::cast(pEnt)->getClosestPointTo(p, onCurve) == Acad::eOk) {
+                    best = std::min(best, dist2d(p, onCurve));
+                }
+            } else {
+                AcDbExtents ext;
+                if (pEnt->getGeomExtents(ext) == Acad::eOk) {
+                    best = std::min(best, boxDistance(p, ext));
+                }
+            }
+        }
+        delete pEnt;
+    }
+    return best;
+}
+
+/// Hoechste Version eines Blocks: Name = <prefix>_V<n>, groesstes n
+AcDbObjectId newestBlock(AcDbDatabase* db, const QString& upperPrefix, QString* nameOut = nullptr)
+{
+    static const QRegularExpression re(QStringLiteral("_V_?(\\d+)$"));
+    AcDbObjectId best;
+    int bestVersion = -1;
+    AcDbBlockTable* pTable = nullptr;
+    if (db->getBlockTable(pTable, AcDb::kForRead) != Acad::eOk || !pTable) return best;
+    AcDbBlockTableIterator* pIter = nullptr;
+    pTable->newIterator(pIter);
+    for (; pIter && !pIter->done(); pIter->step()) {
+        AcDbBlockTableRecord* pRecord = nullptr;
+        if (pIter->getRecord(pRecord, AcDb::kForRead) != Acad::eOk || !pRecord) continue;
+        const ACHAR* raw = nullptr;
+        pRecord->getName(raw);
+        const QString name = fromAchar(raw);
+        const QString upper = OcEngine::lispUpper(name);
+        if (upper.startsWith(upperPrefix)) {
+            const QRegularExpressionMatch m = re.match(upper);
+            const int version = m.hasMatch() ? m.captured(1).toInt() : 0;
+            if (version > bestVersion) {
+                bestVersion = version;
+                best = pRecord->objectId();
+                if (nameOut) *nameOut = name;
+            }
+        }
+        pRecord->close();
+    }
+    delete pIter;
+    pTable->close();
+    return best;
+}
+
+/// Unterkante einer Blockdefinition unter dem Einfuegepunkt (Bloecke der
+/// Liste haben den Einfuegepunkt links oben); Breite nach rechts
+bool blockSize(const AcDbObjectId& recordId, double& height, double& width)
+{
+    AcDbBlockTableRecord* pRecord = nullptr;
+    if (acdbOpenObject(pRecord, recordId, AcDb::kForRead) != Acad::eOk || !pRecord) return false;
+    bool any = false;
+    double minY = 0, maxX = 0;
+    AcDbBlockTableRecordIterator* pIter = nullptr;
+    pRecord->newIterator(pIter);
+    for (; pIter && !pIter->done(); pIter->step()) {
+        AcDbEntity* pEnt = nullptr;
+        if (pIter->getEntity(pEnt, AcDb::kForRead) != Acad::eOk || !pEnt) continue;
+        if (!pEnt->isKindOf(AcDbText::desc())) {
+            AcDbExtents ext;
+            if (pEnt->getGeomExtents(ext) == Acad::eOk) {
+                minY = any ? std::min(minY, ext.minPoint().y) : ext.minPoint().y;
+                maxX = any ? std::max(maxX, ext.maxPoint().x) : ext.maxPoint().x;
+                any = true;
+            }
+        }
+        pEnt->close();
+    }
+    delete pIter;
+    pRecord->close();
+    if (!any || minY > -1e-6) return false;
+    height = -minY;
+    width = maxX;
+    return true;
+}
+
+} // namespace
+
+int OcLlLayout::rowsPerPage() const
+{
+    if (hZeile <= 1e-6) return 0;
+    const double room = (y0 - hAsp - hKopf) - yMin;
+    return std::max(0, static_cast<int>(std::floor(room / hZeile + 1e-6)));
+}
+
+OcLlScan OcDrawing::scanLeistungsstempel(double tol) const
+{
+    OcLlScan scan;
+    if (!d->db) return scan;
+
+    scan.zeichnungsnummer = attributeValue(QStringLiteral("ZEICHNUNGSNUMMER"),
+                                           QStringLiteral("OC_RSH_PLANKOPF*"));
+    scan.ortskennzeichen = attributeValue(QStringLiteral("ORTSKENNZEICHEN"),
+                                          QStringLiteral("OC_RSH_PLANKOPF*"));
+
+    // Modellbereich und Layer, die die Suche braucht
+    AcDbObjectId modelSpace, linkLayer, suppressLayer;
+    {
+        AcDbBlockTable* pTable = nullptr;
+        if (d->db->getBlockTable(pTable, AcDb::kForRead) == Acad::eOk && pTable) {
+            pTable->getAt(ACDB_MODEL_SPACE, modelSpace);
+            pTable->close();
+        }
+        AcDbLayerTable* pLayers = nullptr;
+        if (d->db->getLayerTable(pLayers, AcDb::kForRead) == Acad::eOk && pLayers) {
+            AcDbLayerTableIterator* pIter = nullptr;
+            pLayers->newIterator(pIter);
+            for (; pIter && !pIter->done(); pIter->step()) {
+                AcDbObjectId id;
+                if (pIter->getRecordId(id) != Acad::eOk) continue;
+                const QString name = layerUpper(id);
+                if (name == QLatin1String(kLlLinkLayer)) linkLayer = id;
+                else if (name == QLatin1String("*SUPPRESS")) suppressLayer = id;
+            }
+            delete pIter;
+            pLayers->close();
+        }
+    }
+
+    auto ownedByModelSpace = [&modelSpace](const AcDbObjectId& id) {
+        AcDbEntity* pEnt = nullptr;
+        if (acdbOpenObject(pEnt, id, AcDb::kForRead) != Acad::eOk || !pEnt) return false;
+        const bool inModel = pEnt->ownerId() == modelSpace;
+        pEnt->close();
+        return inModel;
+    };
+
+    // ---- Stempel, Geraete-Kandidaten, Schrank ----
+    static const QRegularExpression listSplit(QStringLiteral("[,;\\s]+"));
+    static const QRegularExpression nrRe(QStringLiteral("^\\s*\\[(\\d+)\\]"));
+    QVector<int> stampIdx;      // Index in d->inserts
+    QVector<int> deviceIdx;
+    for (int i = 0; i < d->inserts.size(); ++i) {
+        const Impl::Ins& ins = d->inserts.at(i);
+        QString liste;
+        if (Impl::readFirst(ins, QStringLiteral("OC_LISTE"), liste)) {
+            const QStringList tokens = OcEngine::lispUpper(liste).split(listSplit, Qt::SkipEmptyParts);
+            if (tokens.contains(QStringLiteral("LL"))) {
+                stampIdx.append(i);
+                continue;
+            }
+        }
+        bool hasBas = false;
+        for (const Impl::Attr& a : ins.attrs) {
+            if (a.upper.startsWith(QLatin1String("OC_BAS_DP_"))) { hasBas = true; break; }
+        }
+        if (hasBas) deviceIdx.append(i);
+        if (!scan.schrankBlatt
+            && Impl::lastOrEmpty(ins, QStringLiteral("OC_AKS")).trimmed().toUpper()
+                   .startsWith(QLatin1String("ASP-"))) {
+            scan.schrankBlatt = true;
+        }
+    }
+    if (stampIdx.isEmpty()) return scan;
+
+    // ---- Linien auf dem Verbindungslayer im Modellbereich ----
+    struct Ends { AcGePoint3d a, b; };
+    QVector<Ends> lines;
+    if (!linkLayer.isNull() && !modelSpace.isNull()) {
+        AcDbBlockTableRecord* pSpace = nullptr;
+        if (acdbOpenObject(pSpace, modelSpace, AcDb::kForRead) == Acad::eOk && pSpace) {
+            AcDbBlockTableRecordIterator* pIter = nullptr;
+            pSpace->newIterator(pIter);
+            for (; pIter && !pIter->done(); pIter->step()) {
+                AcDbEntity* pEnt = nullptr;
+                if (pIter->getEntity(pEnt, AcDb::kForRead) != Acad::eOk || !pEnt) continue;
+                if (pEnt->layerId() == linkLayer && pEnt->isKindOf(AcDbCurve::desc())) {
+                    AcDbCurve* pCurve = AcDbCurve::cast(pEnt);
+                    Ends e;
+                    if (!pCurve->isClosed()
+                        && pCurve->getStartPoint(e.a) == Acad::eOk
+                        && pCurve->getEndPoint(e.b) == Acad::eOk
+                        && dist2d(e.a, e.b) > tol) {
+                        lines.append(e);
+                    }
+                }
+                pEnt->close();
+            }
+            delete pIter;
+            pSpace->close();
+        }
+    }
+
+    auto distanceTo = [&](const Impl::Ins& ins, const AcGePoint3d& p) {
+        AcDbBlockReference* pRef = nullptr;
+        if (acdbOpenObject(pRef, ins.id, AcDb::kForRead) != Acad::eOk || !pRef) return kLlInfinity;
+        double dist = kLlInfinity;
+        AcDbExtents ext;
+        // Vorauswahl ueber die Ausdehnung, erst dann zerlegen
+        if (pRef->getGeomExtents(ext) != Acad::eOk || boxDistance(p, ext) <= tol) {
+            dist = visibleDistance(pRef, p, suppressLayer);
+        }
+        pRef->close();
+        return dist;
+    };
+
+    QVector<bool> deviceInModel(deviceIdx.size(), false);
+    for (int k = 0; k < deviceIdx.size(); ++k) {
+        deviceInModel[k] = ownedByModelSpace(d->inserts.at(deviceIdx.at(k)).id);
+    }
+
+    for (int si : stampIdx) {
+        const Impl::Ins& ins = d->inserts.at(si);
+        OcLlStamp st;
+        st.anlage = Impl::lastOrEmpty(ins, QStringLiteral("OC_ANLAGE"));
+        const QRegularExpressionMatch m = nrRe.match(st.anlage);
+        st.nr = m.hasMatch() ? m.captured(1).toInt() : 0;
+        st.bemerkung = Impl::lastOrEmpty(ins, QStringLiteral("OC_BEMERKUNG"));
+        st.x = ins.x;
+        st.y = ins.y;
+        for (int n = 1; n <= 16; ++n) {
+            QString s1, s2;
+            const bool has1 = Impl::readFirst(ins, QStringLiteral("OC_TEXT_Z%1_S1").arg(n), s1);
+            const bool has2 = Impl::readFirst(ins, QStringLiteral("OC_TEXT_Z%1_S2").arg(n), s2);
+            if (has1 || has2) st.zeilen.append(qMakePair(s1, s2));
+        }
+
+        // Linien, die an diesem Stempel enden; das andere Ende sucht das Geraet
+        st.link = OcLlStamp::NoLine;
+        if (ownedByModelSpace(ins.id)) {
+            for (const Ends& e : lines) {
+                const double da = distanceTo(ins, e.a);
+                const double db = distanceTo(ins, e.b);
+                if (std::min(da, db) > tol) continue;
+                const AcGePoint3d far = (da <= db) ? e.b : e.a;
+
+                int bestK = -1;
+                double bestDist = kLlInfinity;
+                for (int k = 0; k < deviceIdx.size(); ++k) {
+                    if (!deviceInModel.at(k)) continue;
+                    const double dist = distanceTo(d->inserts.at(deviceIdx.at(k)), far);
+                    if (dist <= tol && dist < bestDist) {
+                        bestDist = dist;
+                        bestK = k;
+                    }
+                }
+                if (bestK < 0) {
+                    st.link = OcLlStamp::NoDevice;
+                    continue;   // vielleicht fuehrt eine weitere Linie zum Geraet
+                }
+
+                const Impl::Ins& dev = d->inserts.at(deviceIdx.at(bestK));
+                st.deviceAks = Impl::lastOrEmpty(dev, QStringLiteral("OC_AKS")).trimmed();
+                // Erster nicht leerer BAS in der Reihenfolge der Datenpunkte
+                QString bas;
+                int bestN = INT_MAX;
+                for (const Impl::Attr& a : dev.attrs) {
+                    if (!a.upper.startsWith(QLatin1String("OC_BAS_DP_"))) continue;
+                    const int n = a.upper.mid(10).toInt();
+                    const QString value = a.text.trimmed();
+                    if (!value.isEmpty() && n < bestN) {
+                        bestN = n;
+                        bas = value;
+                    }
+                }
+                if (bas.isEmpty()) {
+                    st.link = OcLlStamp::NoBasValue;
+                    break;
+                }
+                // Nach dem Bauteil abschneiden: OC_AKS und alles davor
+                const int pos = st.deviceAks.isEmpty()
+                    ? -1 : bas.lastIndexOf(st.deviceAks, -1, Qt::CaseInsensitive);
+                if (pos >= 0) {
+                    st.bas = bas.left(pos + st.deviceAks.size());
+                } else {
+                    st.bas = bas;
+                    st.basCut = false;
+                }
+                st.link = OcLlStamp::Linked;
+                break;
+            }
+        }
+        scan.stamps.append(st);
+    }
+
+    // Reihenfolge auf dem Blatt: [n], ohne Nummer zuletzt, dann von links nach rechts
+    std::stable_sort(scan.stamps.begin(), scan.stamps.end(),
+                     [](const OcLlStamp& a, const OcLlStamp& b) {
+                         const int na = a.nr > 0 ? a.nr : INT_MAX;
+                         const int nb = b.nr > 0 ? b.nr : INT_MAX;
+                         if (na != nb) return na < nb;
+                         if (std::fabs(a.x - b.x) > 1e-6) return a.x < b.x;
+                         return a.y > b.y;
+                     });
+    return scan;
+}
+
+OcLlLayout OcDrawing::leistungslisteLayout() const
+{
+    OcLlLayout layout;
+    if (!d->db) {
+        layout.error = QStringLiteral("Keine Zeichnung geoeffnet");
+        return layout;
+    }
+
+    const struct { const char* prefix; double* height; } blocks[] = {
+        { "OC_VORLAGE_LEISTUNGSLISTE_ASP_V", &layout.hAsp },
+        { "OC_VORLAGE_LEISTUNGSLISTE_KOPF_V", &layout.hKopf },
+        { "OC_VORLAGE_LEISTUNGSLISTE_ZEILE_V", &layout.hZeile },
+        { "OC_VORLAGE_LEISTUNGSLISTE_SUMME_V", &layout.hSumme },
+    };
+    for (const auto& b : blocks) {
+        const AcDbObjectId id = newestBlock(d->db, QLatin1String(b.prefix));
+        double h = 0, w = 0;
+        if (id.isNull()) {
+            layout.error = QStringLiteral("Block %1* fehlt in der Vorlage").arg(QLatin1String(b.prefix));
+            return layout;
+        }
+        if (blockSize(id, h, w)) *b.height = h;
+    }
+
+    // Anker: das ASP-Band der Vorlage
+    bool anchor = false;
+    double plankopfTop = -kLlInfinity;
+    for (Impl::Ins& ins : d->inserts) {
+        const QString& name = d->effectiveUpper(ins);
+        if (!anchor && name.startsWith(QLatin1String("OC_VORLAGE_LEISTUNGSLISTE_ASP_V"))) {
+            layout.x0 = ins.x;
+            layout.y0 = ins.y;
+            anchor = true;
+        } else if (name.startsWith(QLatin1String("OC_RSH_PLANKOPF"))) {
+            AcDbBlockReference* pRef = nullptr;
+            if (acdbOpenObject(pRef, ins.id, AcDb::kForRead) == Acad::eOk && pRef) {
+                AcDbExtents ext;
+                if (pRef->getGeomExtents(ext) == Acad::eOk) {
+                    plankopfTop = std::max(plankopfTop, ext.maxPoint().y);
+                }
+                pRef->close();
+            }
+        }
+    }
+    if (!anchor) {
+        layout.error = QStringLiteral("Die Vorlage enthaelt kein ASP-Band "
+                                      "(OC_VORLAGE_LEISTUNGSLISTE_ASP_V*) als Anker der Liste");
+        return layout;
+    }
+    layout.yMin = (plankopfTop > -kLlInfinity) ? plankopfTop + kLlPlankopfGap : 60.0;
+    if (layout.rowsPerPage() < 3) {
+        layout.error = QStringLiteral("Zwischen ASP-Band und Plankopf ist kein Platz fuer die Liste");
+        return layout;
+    }
+    layout.ok = true;
+    return layout;
+}
+
+OcLlBuildResult OcDrawing::buildLeistungsliste(const OcLlLayout& layout, const OcLlPage& page)
+{
+    OcLlBuildResult result;
+    if (!d->db) {
+        result.error = QStringLiteral("Keine Zeichnung geoeffnet");
+        return result;
+    }
+
+    const AcDbObjectId idAsp = newestBlock(d->db, QStringLiteral("OC_VORLAGE_LEISTUNGSLISTE_ASP_V"));
+    const AcDbObjectId idKopf = newestBlock(d->db, QStringLiteral("OC_VORLAGE_LEISTUNGSLISTE_KOPF_V"));
+    const AcDbObjectId idZeile = newestBlock(d->db, QStringLiteral("OC_VORLAGE_LEISTUNGSLISTE_ZEILE_V"));
+    const AcDbObjectId idSumme = newestBlock(d->db, QStringLiteral("OC_VORLAGE_LEISTUNGSLISTE_SUMME_V"));
+    if (idAsp.isNull() || idKopf.isNull() || idZeile.isNull() || idSumme.isNull()) {
+        result.error = QStringLiteral("Bloecke OC_VORLAGE_LEISTUNGSLISTE_* fehlen in der Vorlage");
+        return result;
+    }
+
+    // Musterzeilen der Vorlage entfernen; ihr Layer gilt fuer die neue Liste
+    AcDbObjectId listLayer;
+    for (Impl::Ins& ins : d->inserts) {
+        if (!d->effectiveUpper(ins).startsWith(QLatin1String("OC_VORLAGE_LEISTUNGSLISTE_"))) continue;
+        AcDbEntity* pEnt = nullptr;
+        if (acdbOpenObject(pEnt, ins.id, AcDb::kForWrite) == Acad::eOk && pEnt) {
+            if (listLayer.isNull()) listLayer = pEnt->layerId();
+            pEnt->erase();
+            pEnt->close();
+        }
+    }
+
+    AcDbBlockTable* pTable = nullptr;
+    AcDbBlockTableRecord* pSpace = nullptr;
+    if (d->db->getBlockTable(pTable, AcDb::kForRead) != Acad::eOk || !pTable) {
+        result.error = QStringLiteral("Blocktabelle nicht lesbar");
+        return result;
+    }
+    const Acad::ErrorStatus esSpace = pTable->getAt(ACDB_MODEL_SPACE, pSpace, AcDb::kForWrite);
+    pTable->close();
+    if (esSpace != Acad::eOk || !pSpace) {
+        result.error = QStringLiteral("Modellbereich nicht beschreibbar");
+        return result;
+    }
+
+    // Einfuegen mit Attributen aus der Blockdefinition; Werte nach Tag
+    auto insert = [&](const AcDbObjectId& recordId, double y, const OcPairs& values) {
+        AcDbBlockReference* pRef = new AcDbBlockReference(AcGePoint3d(layout.x0, y, 0.0), recordId);
+        pRef->setDatabaseDefaults(d->db);
+        if (!listLayer.isNull()) pRef->setLayer(listLayer);
+        AcDbObjectId refId;
+        if (pSpace->appendAcDbEntity(refId, pRef) != Acad::eOk) {
+            delete pRef;
+            return false;
+        }
+        AcDbBlockTableRecord* pDef = nullptr;
+        if (acdbOpenObject(pDef, recordId, AcDb::kForRead) == Acad::eOk && pDef) {
+            if (pDef->hasAttributeDefinitions()) {
+                AcDbBlockTableRecordIterator* pIter = nullptr;
+                pDef->newIterator(pIter);
+                for (; pIter && !pIter->done(); pIter->step()) {
+                    AcDbEntity* pEnt = nullptr;
+                    if (pIter->getEntity(pEnt, AcDb::kForRead) != Acad::eOk || !pEnt) continue;
+                    AcDbAttributeDefinition* pDefAttr = AcDbAttributeDefinition::cast(pEnt);
+                    if (pDefAttr && !pDefAttr->isConstant()) {
+                        AcDbAttribute* pAttr = new AcDbAttribute();
+                        pAttr->setAttributeFromBlock(pDefAttr, pRef->blockTransform());
+                        const QString tag = OcEngine::lispUpper(fromAchar(pDefAttr->tagConst()));
+                        for (const auto& pair : values) {
+                            if (pair.first == tag) {
+                                pAttr->setTextString(pair.second.toStdWString().c_str());
+                                break;
+                            }
+                        }
+                        if (pRef->appendAttribute(pAttr) == Acad::eOk) {
+                            adjustTextAlignment(pAttr, d->db);
+                            pAttr->close();
+                        } else {
+                            delete pAttr;
+                        }
+                    }
+                    pEnt->close();
+                }
+                delete pIter;
+            }
+            pDef->close();
+        }
+        pRef->close();
+        return true;
+    };
+
+    double y = layout.y0;
+    bool ok = insert(idAsp, y, page.aspBand);
+    y -= layout.hAsp;
+    ok = insert(idKopf, y, OcPairs()) && ok;
+    y -= layout.hKopf;
+    for (const OcPairs& row : page.rows) {
+        ok = insert(idZeile, y, row) && ok;
+        y -= layout.hZeile;
+        ++result.rows;
+    }
+    if (page.withSumme) {
+        ok = insert(idSumme, y, page.summe) && ok;
+        y -= layout.hSumme;
+    }
+    pSpace->close();
+    const double yBottom = y;
+
+    // Trennlinien, die die Liste kreuzen, einfrieren. Sie liegen im
+    // Blattrahmen; massgebend ist ihre Lage auf dem Blatt.
+    QSet<QString> crossing;
+    for (Impl::Ins& ins : d->inserts) {
+        AcDbBlockReference* pRef = nullptr;
+        if (acdbOpenObject(pRef, ins.id, AcDb::kForRead) != Acad::eOk || !pRef) continue;
+        if (pRef->isErased()) { pRef->close(); continue; }
+        const AcGeMatrix3d xform = pRef->blockTransform();
+        AcDbBlockTableRecord* pDef = nullptr;
+        if (acdbOpenObject(pDef, pRef->blockTableRecord(), AcDb::kForRead) == Acad::eOk && pDef) {
+            AcDbBlockTableRecordIterator* pIter = nullptr;
+            pDef->newIterator(pIter);
+            for (; pIter && !pIter->done(); pIter->step()) {
+                AcDbEntity* pEnt = nullptr;
+                if (pIter->getEntity(pEnt, AcDb::kForRead) != Acad::eOk || !pEnt) continue;
+                const QString layer = layerUpper(pEnt->layerId());
+                if (layer.startsWith(QLatin1String("GA-TRENNLINIE-")) && !crossing.contains(layer)) {
+                    AcDbExtents ext;
+                    if (pEnt->getGeomExtents(ext) == Acad::eOk) {
+                        ext.transformBy(xform);
+                        if (ext.maxPoint().y >= yBottom - 1e-6 && ext.minPoint().y <= layout.y0 + 1e-6) {
+                            crossing.insert(layer);
+                        }
+                    }
+                }
+                pEnt->close();
+            }
+            delete pIter;
+            pDef->close();
+        }
+        pRef->close();
+    }
+    if (!crossing.isEmpty()) {
+        // Die Namen in der Schreibweise der Zeichnung einfrieren
+        QStringList names;
+        AcDbLayerTable* pLayers = nullptr;
+        if (d->db->getLayerTable(pLayers, AcDb::kForRead) == Acad::eOk && pLayers) {
+            AcDbLayerTableIterator* pIter = nullptr;
+            pLayers->newIterator(pIter);
+            for (; pIter && !pIter->done(); pIter->step()) {
+                AcDbLayerTableRecord* pLayer = nullptr;
+                if (pIter->getRecord(pLayer, AcDb::kForRead) != Acad::eOk || !pLayer) continue;
+                const ACHAR* raw = nullptr;
+                pLayer->getName(raw);
+                const QString name = fromAchar(raw);
+                if (crossing.contains(OcEngine::lispUpper(name))) names << name;
+                pLayer->close();
+            }
+            delete pIter;
+            pLayers->close();
+        }
+        names.sort(Qt::CaseInsensitive);
+        freezeLayers(names);
+        result.frozenLayers = names;
+    }
+
+    d->loadInserts();
+    result.ok = ok;
+    if (!ok) result.error = QStringLiteral("Nicht alle Bloecke der Liste liessen sich einfuegen");
     return result;
 }
 

@@ -232,6 +232,7 @@ set(PLUGIN_SOURCES
     src/plugin/OpenCirtPlugin.cpp
     src/core/ProjectBuilder.cpp
     src/core/OpenCirtEngine.cpp
+    src/core/Leistungsliste.cpp
     src/ui/OpenCirtWindow.cpp
     src/ui/OpenCirtTab.cpp
     src/ui/BasConfigDialog.cpp
@@ -244,6 +245,7 @@ set(PLUGIN_HEADERS
     src/plugin/OpenCirtPlugin.h
     src/core/ProjectBuilder.h
     src/core/OpenCirtEngine.h
+    src/core/Leistungsliste.h
     src/core/TextAlignment.h
     src/ui/OpenCirtWindow.h
     src/ui/OpenCirtTab.h

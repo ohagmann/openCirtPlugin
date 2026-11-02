@@ -28,6 +28,7 @@
 #include "../utils/CsvListWriter.h"
 #include "../core/ProjectBuilder.h"
 #include "../core/OpenCirtEngine.h"
+#include "../core/Leistungsliste.h"
 
 // Qt Headers
 #include <QVBoxLayout>
@@ -63,6 +64,7 @@
 #include <QCryptographicHash>
 #include <QSysInfo>
 #include <algorithm>
+#include <cmath>
 #include <QTreeWidget>
 #include <QHeaderView>
 #include <QAbstractItemView>
@@ -289,6 +291,7 @@ bool OpenCirtConfig::loadFromFile(const QString& projectRoot) {
     QJsonObject obj = doc.object();
     includeBmk = obj.value("includeBmk").toBool(true);
     includeBas = obj.value("includeBas").toBool(true);
+    includeLl = obj.value("includeLl").toBool(false);
     lastProjectRoot = obj.value("lastProjectRoot").toString();
     
     return true;
@@ -310,6 +313,7 @@ bool OpenCirtConfig::saveToFile(const QString& projectRoot) const {
     QJsonObject obj;
     obj["includeBmk"] = includeBmk;
     obj["includeBas"] = includeBas;
+    obj["includeLl"] = includeLl;
     obj["lastProjectRoot"] = lastProjectRoot;
     obj["version"] = "1.1";
     obj["lastModified"] = QDateTime::currentDateTime().toString(Qt::ISODate);
@@ -440,6 +444,14 @@ void OpenCirtTab::setupUi() {
         rowLayout->addStretch();
         buttonLayout->addLayout(rowLayout);
     }
+
+    m_chkIncludeLl = new QCheckBox("Anlagenleistungslisten einschliessen");
+    m_chkIncludeLl->setChecked(false);
+    m_chkIncludeLl->setToolTip(
+        "Je ASP eine Anlagenleistungsliste aus den Leistungsstempeln (OC_LISTE = LL)\n"
+        "erzeugen, nach den Summenblaettern. Vorlage: 04- Vorlagen/OC_VORLAGE_LEISTUNGSLISTE_V*.dwg,\n"
+        "Einspeisungsgroessen: 01- Referenzen/Einspeisungen.csv.");
+    addOptionRow(m_chkIncludeLl);
 
     addSeparator();
 
@@ -763,6 +775,7 @@ void OpenCirtTab::updateButtonStates() {
     m_btnBasConfig->setEnabled(enabled);
     m_chkIncludeBmk->setEnabled(enabled);
     m_chkIncludeBas->setEnabled(enabled);
+    m_chkIncludeLl->setEnabled(enabled);
     // Waehrend eines Laufs bleibt auch der Projektordner fest
     m_projectEdit->setEnabled(!m_running);
     m_btnBrowse->setEnabled(!m_running);
@@ -805,6 +818,7 @@ void OpenCirtTab::loadConfig() {
     if (m_config.loadFromFile(m_projectRoot)) {
         m_chkIncludeBmk->setChecked(m_config.includeBmk);
         m_chkIncludeBas->setChecked(m_config.includeBas);
+        m_chkIncludeLl->setChecked(m_config.includeLl);
     }
 }
 
@@ -813,6 +827,7 @@ void OpenCirtTab::saveConfig() {
     
     m_config.includeBmk = m_chkIncludeBmk->isChecked();
     m_config.includeBas = m_chkIncludeBas->isChecked();
+    m_config.includeLl = m_chkIncludeLl->isChecked();
     m_config.lastProjectRoot = m_projectRoot;
     
     m_config.saveToFile(m_projectRoot);
@@ -889,7 +904,8 @@ QStringList OpenCirtTab::findProjectDwgs() {
         // Erzeugte Blaetter in den Unterordnern ueberspringen
         QString fileName = fi.fileName();
         if (fileName.contains("_GA_FL_") || fileName.contains("_Summe_") ||
-            fileName.contains("_Deckblatt") || fileName.contains("_Inhalt_")) {
+            fileName.contains("_Deckblatt") || fileName.contains("_Inhalt_") ||
+            fileName.contains("_Leistungsliste_")) {
             continue;
         }
         dwgFiles << path;
@@ -913,7 +929,8 @@ QStringList OpenCirtTab::findProjektblaetter() {
     for (const QString& f : files) {
         if (f.contains("_Inhalt_", Qt::CaseInsensitive) ||
             f.contains("_Summe", Qt::CaseInsensitive) ||
-            f.contains("_GA_FL_", Qt::CaseInsensitive)) {
+            f.contains("_GA_FL_", Qt::CaseInsensitive) ||
+            f.contains("_Leistungsliste_", Qt::CaseInsensitive)) {
             continue;
         }
         result << dir.absoluteFilePath(f);
@@ -1291,13 +1308,16 @@ void OpenCirtTab::onFullProjectGenerate() {
 
     if (!checkNoOpenDrawings("Projekt erstellen")) return;
 
+    const bool doLl = m_chkIncludeLl->isChecked();
     QMessageBox::StandardButton reply = QMessageBox::warning(this,
         "Projekt erstellen",
-        "Empfehlung: Speichern Sie den gesamten Zeichnungsordner vorher als "
+        QString("Empfehlung: Speichern Sie den gesamten Zeichnungsordner vorher als "
         "ZIP-Archiv als Sicherungskopie.\n\n"
-        "Schritte: Deckblaetter + BMK + BAS + Extraktion + GA-FL + Summen + Textbreiten\n"
-        "Alle bestehenden *_Deckblatt.dwg, *_GA_FL_*.dwg und *_Summe*.dwg werden geloescht.\n\n"
-        "Fortfahren?",
+        "Schritte: Deckblaetter + BMK + BAS + Extraktion + GA-FL + Summen + Textbreiten%1\n"
+        "Alle bestehenden *_Deckblatt.dwg, *_GA_FL_*.dwg%2 und *_Summe*.dwg werden geloescht.\n\n"
+        "Fortfahren?")
+            .arg(doLl ? " + Leistungslisten" : "",
+                 doLl ? ", *_Leistungsliste_*.dwg" : ""),
         QMessageBox::Yes | QMessageBox::Cancel);
     
     if (reply != QMessageBox::Yes) return;
@@ -1318,6 +1338,13 @@ void OpenCirtTab::onFullProjectGenerate() {
 
     RunCounts counts;
     beginRun(m_btnFullProject, "Projekt wird erstellt...");
+    // Leistungsstempel ohne Geraet vor dem ersten Schreibzugriff melden:
+    // bei "Abbrechen" ist am Projekt noch nichts geaendert
+    if (doLl && !precheckLeistungsstempel(dwgFiles, m_chkIncludeBas->isChecked())) {
+        endRun();
+        log("Projekt erstellen abgebrochen (Leistungsstempel ohne Geraet) - nichts geaendert");
+        return;
+    }
     const bool finished = runGesamtlauf(dwgFiles, counts);
     endRun();
 
@@ -1335,11 +1362,15 @@ void OpenCirtTab::onFullProjectGenerate() {
         "Datenpunkte:  %2\n"
         "GA-FL-Blaetter:  %3\n"
         "Summenblaetter:  %4\n"
+        "%8"
         "Textbreiten angepasst:  %5\n"
         "Fehler:  %6\n"
         "Dauer:  %7")
         .arg(counts.deckblaetter).arg(counts.datenpunkte).arg(counts.gaFl)
-        .arg(counts.summen).arg(counts.textbreiten).arg(counts.errors).arg(dauer);
+        .arg(counts.summen).arg(counts.textbreiten).arg(counts.errors).arg(dauer)
+        .arg(doLl ? QString("Leistungslisten:  %1 Blaetter, %2 Stempel\n")
+                        .arg(counts.leistungslisten).arg(counts.llZeilen)
+                  : QString());
 
     if (counts.errors == 0) {
         logSuccess(QString("Projekt erstellt in %1: %2 GA-FL-Blaetter, %3 Summenblaetter, "
@@ -1503,6 +1534,13 @@ bool OpenCirtTab::runGesamtlauf(const QStringList& dwgFiles, RunCounts& counts) 
     cleanupDeckblaetter();
     cleanupInhalt();
     cleanupGaFl();
+    const bool doLl = m_chkIncludeLl->isChecked();
+    m_llScans.clear();
+    if (doLl) {
+        cleanupLeistungslisten();
+    } else {
+        log("Anlagenleistungslisten uebersprungen (deaktiviert) - vorhandene Listen bleiben");
+    }
 
     // Step 1.5: Plankopf-Stammdaten aus CSV (AG, AN, PR etc.) - auch auf die
     // Projektblaetter der obersten Ebene (Deckblatt_A, Revisionshistorie),
@@ -1596,6 +1634,10 @@ bool OpenCirtTab::runGesamtlauf(const QStringList& dwgFiles, RunCounts& counts) 
             if (doBas) {
                 counts.bas += dwg.genBas(basSegments);
             }
+            if (doLl) {
+                // Nach genBas: der BAS des Geraets ist jetzt aktuell
+                m_llScans.insert(pathKey(path), dwg.scanLeistungsstempel());
+            }
             const OcExtractResult ex = dwg.extractDp(subDir, &extractLog);
             if (ex.ok) {
                 extracted.insert(path, ex.lines);
@@ -1648,6 +1690,11 @@ bool OpenCirtTab::runGesamtlauf(const QStringList& dwgFiles, RunCounts& counts) 
 
     // Phase 3: Summen aus den fertigen GA-FL-Blaettern, danach Textbreiten
     createSummen(counts);
+
+    // Phase 4: Anlagenleistungslisten je ASP aus den Leistungsstempeln
+    if (doLl) {
+        createLeistungslisten(counts);
+    }
     return true;
 }
 
@@ -4669,6 +4716,33 @@ QVector<OpenCirtTab::TocEntry> OpenCirtTab::buildTocEntries(
         QString relPath = dwgPath.mid(drawingsDir.length() + 1);
         QStringList parts = relPath.split("/");
         
+        // Anlagenleistungsliste: liegt im ASP-Ordner (Los/ASP/filename.dwg)
+        if (fileName.contains("_Leistungsliste_") && parts.size() == 3) {
+            const QString losName = folderDisplayName(parts[0]);
+            const QString aspName = folderDisplayName(parts[1]);
+            if (losName != lastLos) {
+                TocEntry losEntry;
+                losEntry.los = losName;
+                entries.append(losEntry);
+                lastLos = losName;
+                lastAsp.clear();
+                lastGewerk.clear();
+            }
+            if (aspName != lastAsp) {
+                TocEntry aspEntry;
+                aspEntry.asp = aspName;
+                entries.append(aspEntry);
+                lastAsp = aspName;
+                lastGewerk.clear();
+            }
+            TocEntry entry;
+            const QString zeichnungsNr = readZeichnungsnummer(dwgPath);
+            entry.zeichnungsNr = zeichnungsNr.isEmpty() ? fileName : zeichnungsNr;
+            entry.seite = i + 1 + tocPageCount;
+            entries.append(entry);
+            continue;
+        }
+
         // Need at least: Los/ASP/Gewerk/filename.dwg = 4 parts
         if (parts.size() < 4) continue;
         
@@ -4875,10 +4949,13 @@ QStringList OpenCirtTab::collectOrderedDwgsForPublish() {
         QStringList deckblattFiles;
         QStringList contentFiles;
         QStringList summeFiles;
+        QStringList listFiles;      // Anlagenleistungsliste: nach der Summe
         
         for (const QString& f : allDwgs) {
             if (f.contains("_Summe", Qt::CaseInsensitive)) {
                 summeFiles << folderPath + "/" + f;
+            } else if (f.contains("_Leistungsliste_", Qt::CaseInsensitive)) {
+                listFiles << folderPath + "/" + f;
             } else if (f.startsWith("0000")) {
                 deckblattFiles << folderPath + "/" + f;
             } else {
@@ -4891,6 +4968,9 @@ QStringList OpenCirtTab::collectOrderedDwgsForPublish() {
         
         // 3. Summe directly after Deckblatt
         result.append(summeFiles);
+
+        // 3b. Anlagenleistungsliste des ASP nach der Summe
+        result.append(listFiles);
         
         // 4. Content files (sorted alphabetically)
         result.append(contentFiles);
@@ -5612,6 +5692,277 @@ void OpenCirtTab::onPdfDonePollTimer() {
         .arg(pdfInfo.absolutePath()));
     
     m_publishedPdfPath.clear();
+}
+
+// ============================================================================
+// Anlagenleistungsliste je ASP
+// ============================================================================
+
+QString OpenCirtTab::pathKey(const QString& path) {
+    return QDir::cleanPath(QDir::fromNativeSeparators(path)).toLower();
+}
+
+QString OpenCirtTab::findLeistungslisteVorlage() {
+    // Wie das Inhaltsverzeichnis ein fertiges A2-Blatt: Rahmen, Plankopf und
+    // die Listenbloecke (ASP-Band, Kopf, Zeile, Summe) als Muster
+    return newestVorlage(projectPath(OpenCirtConfig::VORLAGEN_DIR),
+                         OpenCirtConfig::LEISTUNGSLISTE_VORLAGE_PATTERN);
+}
+
+int OpenCirtTab::cleanupLeistungslisten() {
+    const QString drawingsDir = projectPath(OpenCirtConfig::ZEICHNUNGEN_DIR);
+    int deleted = 0;
+    QDirIterator it(drawingsDir,
+                    QStringList() << "*_Leistungsliste_*.dwg" << "*_Leistungsliste_*.bak",
+                    QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString path = it.next();
+        if (QFile::remove(path)) {
+            ++deleted;
+        } else {
+            logError(QString("Konnte nicht loeschen: %1").arg(QFileInfo(path).fileName()));
+        }
+    }
+    log(QString("Leistungslisten-Cleanup: %1 Dateien geloescht").arg(deleted));
+    return deleted;
+}
+
+bool OpenCirtTab::precheckLeistungsstempel(const QStringList& dwgFiles, bool doBas) {
+    if (findLeistungslisteVorlage().isEmpty()) {
+        const QMessageBox::StandardButton answer = QMessageBox::warning(this,
+            "Anlagenleistungslisten",
+            "Die Vorlage OC_VORLAGE_LEISTUNGSLISTE_V*.dwg fehlt in 04- Vorlagen.\n"
+            "Ohne sie entstehen keine Anlagenleistungslisten.\n\n"
+            "Lauf trotzdem ausfuehren?",
+            QMessageBox::Yes | QMessageBox::Cancel);
+        return answer == QMessageBox::Yes;
+    }
+
+    const QDir root(projectPath(OpenCirtConfig::ZEICHNUNGEN_DIR));
+    WarningGroup noLine{ "Keine Verbindungslinie am Stempel", {} };
+    WarningGroup noDevice{ "Linie endet an keinem Geraet mit BAS", {} };
+    WarningGroup noBas{ "Geraet ohne BAS-Wert (BAS-Generierung ist aus)", {} };
+    WarningGroup noAks{ "Geraet ohne OC_AKS - BAS wird nicht nach dem Bauteil gekuerzt", {} };
+    int stamps = 0;
+    int sheets = 0;
+
+    // Nur lesen: der Stand vor dem Lauf. Der BAS selbst entsteht erst im Lauf,
+    // hier zaehlt nur, ob am anderen Ende der Linie ein Geraet sitzt.
+    beginPhase("Leistungsstempel pruefen", dwgFiles.size());
+    for (const QString& path : dwgFiles) {
+        OcDrawing dwg;
+        if (dwg.open(path, true)) {
+            const OcLlScan scan = dwg.scanLeistungsstempel();
+            if (!scan.stamps.isEmpty()) ++sheets;
+            for (const OcLlStamp& st : scan.stamps) {
+                ++stamps;
+                const QString where = QString("%1  -  %2")
+                    .arg(root.relativeFilePath(path), st.anlage.trimmed());
+                switch (st.link) {
+                case OcLlStamp::NoLine:     noLine.children << where; break;
+                case OcLlStamp::NoDevice:   noDevice.children << where; break;
+                case OcLlStamp::NoBasValue: if (!doBas) noBas.children << where; break;
+                case OcLlStamp::Linked:
+                    if (st.deviceAks.isEmpty()) noAks.children << where;
+                    break;
+                }
+            }
+        }
+        // Nicht lesbare Zeichnungen meldet der Lauf selbst
+        stepDone(QFileInfo(path).fileName());
+    }
+    log(QString("Leistungsstempel: %1 auf %2 Blaettern").arg(stamps).arg(sheets));
+
+    QVector<WarningGroup> groups;
+    int problems = 0;
+    for (const WarningGroup& g : { noLine, noDevice, noBas, noAks }) {
+        if (g.children.isEmpty()) continue;
+        groups << g;
+        for (const QString& c : g.children) {
+            log(QString("  %1: %2").arg(g.head, c));
+            ++problems;
+        }
+    }
+    if (groups.isEmpty()) return true;
+
+    return showTreeWarning(this, "Leistungsstempel ohne Geraet",
+        QString("%1 Leistungsstempel sind nicht sauber mit einem Geraet verknuepft.\n"
+                "Ohne Geraet wird der BAS in der Anlagenleistungsliste nicht befuellt; "
+                "ohne OC_AKS am Geraet steht er ungekuerzt (mit Funktion und ASP) in der Liste.")
+            .arg(problems),
+        groups, "Meldung",
+        "Lauf trotzdem ausfuehren?", true);
+}
+
+void OpenCirtTab::createLeistungslisten(RunCounts& counts) {
+    const QString vorlage = findLeistungslisteVorlage();
+    if (vorlage.isEmpty()) {
+        logError("Anlagenleistungslisten: Vorlage OC_VORLAGE_LEISTUNGSLISTE_V*.dwg fehlt in "
+                 "04- Vorlagen - keine Listen erzeugt");
+        return;
+    }
+
+    OcLlLayout layout;
+    {
+        OcDrawing tpl;
+        if (!tpl.open(vorlage, true)) {
+            logError(QString("Anlagenleistungslisten: %1: %2")
+                     .arg(QFileInfo(vorlage).fileName(), tpl.lastError()));
+            return;
+        }
+        layout = tpl.leistungslisteLayout();
+    }
+    if (!layout.ok) {
+        logError(QString("Anlagenleistungslisten: %1: %2")
+                 .arg(QFileInfo(vorlage).fileName(), layout.error));
+        return;
+    }
+    const int perPage = layout.rowsPerPage();
+    const int summeRows = std::max(1, static_cast<int>(std::ceil(layout.hSumme / layout.hZeile - 1e-6)));
+    log(QString("Anlagenleistungslisten: Vorlage %1, %2 Zeilen je Blatt")
+        .arg(QFileInfo(vorlage).fileName()).arg(perPage));
+
+    bool csvFound = false;
+    const QVector<double> sizes =
+        OcLl::readEinspeisungen(referencePath(OpenCirtConfig::EINSPEISUNGEN_CSV), &csvFound);
+    if (!csvFound) {
+        logError("Einspeisungen.csv fehlt in 01- Referenzen - die Einspeisung bleibt leer");
+    } else if (sizes.isEmpty()) {
+        logError("Einspeisungen.csv enthaelt keine Groessen - die Einspeisung bleibt leer");
+    }
+
+    ensurePlankopfCsvLoaded();
+    const OcPairs plankopfPairs = pairsFromMap(m_plankopfCsvData);
+
+    // Quellblaetter je ASP-Ordner in der Reihenfolge des PDF
+    const QDir root(projectPath(OpenCirtConfig::ZEICHNUNGEN_DIR));
+    QStringList aspOrder;
+    QMap<QString, QStringList> aspSheets;
+    for (const QString& p : collectOrderedDwgsForPublish()) {
+        const auto it = m_llScans.constFind(pathKey(p));
+        if (it == m_llScans.constEnd()) continue;
+        if (it->stamps.isEmpty() && !it->schrankBlatt) continue;
+        const QString aspFolder = aspFolderPathOf(QFileInfo(p).absolutePath());
+        if (aspFolder.isEmpty()) continue;
+        if (!aspSheets.contains(aspFolder)) aspOrder << aspFolder;
+        aspSheets[aspFolder] << p;
+    }
+
+    QStringList unmapped;
+    int ohneGeraet = 0;
+    int aspCount = 0;
+    beginPhase("Leistungslisten", aspOrder.size());
+    for (const QString& aspFolder : aspOrder) {
+        const QString aspName = folderDisplayName(QDir(aspFolder).dirName());
+        QString standortAsp;
+        QVector<OcLl::Gruppe> gruppen;
+        OcLl::Summen summen;
+        int pos = 1;
+
+        for (const QString& p : aspSheets.value(aspFolder)) {
+            const OcLlScan scan = m_llScans.value(pathKey(p));
+            if (scan.schrankBlatt && standortAsp.isEmpty()) {
+                standortAsp = scan.ortskennzeichen.trimmed();
+            }
+            if (scan.stamps.isEmpty()) continue;
+            OcLl::Gruppe gruppe;
+            for (const OcLlStamp& st : scan.stamps) {
+                const OcPairs row = OcLl::zeile(st, pos++, scan.zeichnungsnummer.trimmed(),
+                                                scan.ortskennzeichen.trimmed(), &unmapped);
+                summen.add(row);
+                gruppe << row;
+                const QString where = QString("%1  -  %2")
+                    .arg(root.relativeFilePath(p), st.anlage.trimmed());
+                if (st.link != OcLlStamp::Linked) {
+                    ++ohneGeraet;
+                    log(QString("  BAS bleibt leer (kein Geraet): %1").arg(where));
+                } else if (!st.basCut) {
+                    log(st.deviceAks.isEmpty()
+                        ? QString("  BAS ungekuerzt, das Geraet hat kein OC_AKS: %1").arg(where)
+                        : QString("  BAS ungekuerzt, OC_AKS %1 steht nicht im BAS: %2")
+                              .arg(st.deviceAks, where));
+                }
+            }
+            gruppen << gruppe;
+        }
+        if (gruppen.isEmpty()) {
+            stepDone(aspName);
+            continue;
+        }
+        ++aspCount;
+        if (standortAsp.isEmpty()) {
+            log(QString("  %1: kein Schrankblatt (Bauteil ASP-*) gefunden - Standort ASP bleibt leer")
+                .arg(aspName));
+        }
+
+        bool tooLarge = false;
+        const QString einspeisung = OcLl::einspeisung(summen.maxPhase(), sizes, &tooLarge);
+        if (tooLarge) {
+            logError(QString("%1: groesste Phasensumme %2 A liegt ueber der groessten Einspeisung "
+                             "aus Einspeisungen.csv - die Einspeisung bleibt leer")
+                     .arg(aspName, OcLl::formatNumber(summen.maxPhase())));
+        }
+
+        OcPairs band;
+        band << qMakePair(QStringLiteral("OC_LL_ASP"), aspName)
+             << qMakePair(QStringLiteral("OC_LL_ASP_STANDORT"), standortAsp);
+        const QVector<OcLlPage> pages = OcLl::paginate(band, gruppen, perPage, summeRows,
+                                                        OcLl::summeZeile(summen, einspeisung));
+        for (int i = 0; i < pages.size(); ++i) {
+            const QString name = QString("0002 %1_Leistungsliste_%2.dwg")
+                .arg(aspName).arg(i + 1, 2, 10, QChar('0'));
+            const QString target = aspFolder + "/" + name;
+            const QString titel = pages.size() > 1
+                ? QString("Anlagenleistungsliste %1/%2").arg(i + 1).arg(pages.size())
+                : QString("Anlagenleistungsliste");
+            if (!copyTemplate(vorlage, target)) {
+                logError(QString("Leistungsliste nicht kopierbar: %1").arg(name));
+                ++counts.errors;
+                continue;
+            }
+            const OcLlPage& page = pages.at(i);
+            if (processNewDrawing(target, counts, [&](OcDrawing& dwg) {
+                    const OcLlBuildResult built = dwg.buildLeistungsliste(layout, page);
+                    if (!built.ok) logError(QString("%1: %2").arg(name, built.error));
+                    if (!built.frozenLayers.isEmpty()) {
+                        log(QString("  %1: Trennlinien ausgeblendet: %2")
+                            .arg(name, built.frozenLayers.join(", ")));
+                    }
+                    dwg.setAttributes(hierarchiePairs(aspName, QString(), QString()),
+                                      QStringLiteral("OC_RSH_Plankopf_quer*"));
+                    if (!plankopfPairs.isEmpty()) dwg.setAttributes(plankopfPairs);
+                    OcPairs nummer;
+                    nummer << qMakePair(QStringLiteral("ZEICHNUNGSNUMMER"), titel);
+                    dwg.setAttributes(nummer, QStringLiteral("OC_RSH_Plankopf_quer*"));
+                    const OcTextWidthResult tw = dwg.textBreitenAnpassen();
+                    counts.textbreiten += tw.blockCount + tw.modelCount;
+                })) {
+                ++counts.leistungslisten;
+            }
+        }
+        counts.llZeilen += pos - 1;
+        log(QString("  %1: %2 Stempel auf %3 Blatt/Blaettern, Summe L1/L2/L3 %4/%5/%6 A, "
+                    "Einspeisung %7")
+            .arg(aspName).arg(pos - 1).arg(pages.size())
+            .arg(OcLl::formatNumber(summen.l1), OcLl::formatNumber(summen.l2),
+                 OcLl::formatNumber(summen.l3),
+                 einspeisung.isEmpty() ? QString("-") : einspeisung));
+        stepDone(aspName);
+    }
+
+    if (!unmapped.isEmpty()) {
+        QStringList distinct;
+        for (const QString& u : unmapped) {
+            if (!distinct.contains(u)) distinct << u;
+        }
+        log(QString("Hinweis: %1 Stempelzeilen ohne passende Spalte (%2). Erkannte Bezeichnungen: %3")
+            .arg(unmapped.size()).arg(distinct.join(", "), OcLl::aliasText()));
+    }
+    if (ohneGeraet > 0) {
+        log(QString("Leistungsstempel ohne Geraet: %1 (BAS leer)").arg(ohneGeraet));
+    }
+    logSuccess(QString("Anlagenleistungslisten: %1 Blaetter fuer %2 ASP, %3 Stempel")
+               .arg(counts.leistungslisten).arg(aspCount).arg(counts.llZeilen));
 }
 
 } // namespace BatchProcessing

@@ -5,6 +5,28 @@ Alle wesentlichen Änderungen am openCirt-Plugin werden in dieser Datei dokument
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei reinen Änderungen an Vorlagen, LISP-Skripten, Dokumentation oder Repo-Konfiguration.
 
+## [2.3.0] - 2026-11-02
+
+### Added
+- **Anlagenleistungsliste je ASP.** Neues Häkchen „Anlagenleistungslisten einschliessen“ unter „Projekt erstellen“ (wird wie BMK/BAS in `opencirt_config.json` gespeichert, Vorgabe aus). Mit Haken erzeugt der Gesamtlauf nach den Summenblättern je ASP die Blätter `0002 <ASP>_Leistungsliste_<NN>.dwg` im ASP-Ordner. Im PDF folgen sie auf ASP-Deckblatt und ASP-Summe, vor den Anlagen; das Inhaltsverzeichnis führt sie unter dem ASP.
+  - Quelle sind die Leistungsstempel: Stempel, deren unsichtbares Attribut `OC_LISTE` den Eintrag `LL` trägt. Die Werte werden nicht nachgerechnet, sondern aus den Stempelzeilen übernommen, wie die Erstellliste sie beim Projektaufbau geschrieben hat. Die Zeile kommt über ihre Bezeichnung (`OC_TEXT_Zn_S1`, ohne Einheit in [] und ohne Groß-/Kleinschreibung) in die Spalte: Anzahl; Pzu-Einzeln (auch „Leistung“); Pzu-Ges.; G-Faktor (auch „Gleichzeitigkeit“); Art d. Antr. (auch Antriebsart, Antrieb, Ventilatortyp, Erhitzertyp); Strom L1/L2/L3; Spannung; Pzu AV/SV; Absicherung. Bemerkungen aus `OC_BEMERKUNG`, Versorgungsbereich aus `ZEICHNUNGSNUMMER` und Standort aus `ORTSKENNZEICHEN` des Plankopfs.
+  - BAS: vom Gerät am anderen Ende der Linie auf dem Layer `GA-Leistungsstempel-Verbindung` (erstes nicht leeres `OC_BAS_DP_n`), gekürzt nach dem `OC_AKS` des Geräts. Ein Linienende gehört zu einem Block, wenn es höchstens 0,5 mm von dessen sichtbarer Geometrie entfernt liegt.
+  - Aufbau: ASP-Band (ASP aus dem Ordner, Standort ASP aus dem Plankopf des Schrankblatts, also des Blatts mit dem Bauteil `ASP-*`), Kopf, ab Pos. 1 die Stempel des ersten Blatts nach [n], eine Leerzeile, die Stempel des nächsten Blatts …, nach dem letzten eine Leerzeile und die Summe. Reicht ein Blatt nicht, geht es auf `_02` mit Band und Kopf weiter; die Stempel eines Quellblatts bleiben zusammen, wenn sie auf ein Listenblatt passen. Trennlinien, die die Liste kreuzt, werden auf dem Listenblatt eingefroren.
+  - Summe: Strom L1/L2/L3 und Pzu AV/SV je Spalte addiert. Einspeisung = kleinste Größe aus `01- Referenzen/Einspeisungen.csv` (erste Spalte, z. B. 16, 20, 32, 40, 50, 63, 80, 100; weitere Spalten werden ignoriert), die größer ist als die größte Phasensumme.
+  - Vorlage: `04- Vorlagen/OC_VORLAGE_LEISTUNGSLISTE_V<n>.dwg` (A2-Blatt mit den Blöcken `OC_VORLAGE_LEISTUNGSLISTE_ASP/KOPF/ZEILE/SUMME_V*`; das ASP-Band der Vorlage ist der Anker, Musterzeilen werden ersetzt).
+  - Vor dem Lauf liest openCirt alle Leistungsstempel und meldet Stempel ohne Linie oder ohne Gerät mit BAS gesammelt (Datei, Pfad, Stempel) mit „Fortfahren“/„Abbrechen“. Bei „Abbrechen“ ist nichts geändert; bei „Fortfahren“ bleibt deren BAS in der Liste leer. Dieselben Fälle stehen im Protokoll.
+
+### Hinweise
+- Die Listenvorlage gehört in den Hauptordner `04- Vorlagen` (neben Inhaltsverzeichnis und `OC_VORLAGE_DIN_A2_V14`) und darf nicht zusätzlich in einem Unterordner liegen: „Projekt aufbauen“ sucht Vorlagen in allen Unterordnern und bricht bei gleichen Namen mit „Mehrdeutige Vorlagen“ ab.
+- Für die Strom- und Netzart-Spalten braucht der Stempel eigene Zeilen (z. B. „Strom L1 [A]“, „Pzu AV [kW]“). Eine Zeile „Strom [A]“ ohne Phase oder „Netz [AV / SV]“ lässt sich ohne Rechnung keiner Spalte zuordnen; das Protokoll nennt solche Zeilen, wenn der Stempel die Werte nicht ohnehin in Phasen- bzw. AV/SV-Zeilen trägt.
+
+### Geprüft (Linux)
+- Testprojekt aus den Vorlagen eines laufenden Projekts (Kopie, Listenvorlage in den Hauptordner verschoben, `Einspeisungen.csv` 16…100 A), Test-Erstellliste mit 35 Anlagen in zwei ASP und 37 Leistungsstempeln (Schaltschrank-Pauschale, Abluftanlage, KVS-Anlage mit drei Stempeln, 31 Heizkreise), BricsCAD V27.1.05 auf eigenem Bildschirm: Projekt aufbauen, Projekt erstellen mit Haken, PDF publizieren.
+  - Vorprüfung meldet den Stempel ohne Linie (KVS „[2] VE UWP“) und das Gerät ohne `OC_AKS` (KVS-Fortluftventilator) in einer Sammelmeldung; nach „Fortfahren“ bleibt der BAS des ersten leer, der des zweiten steht ungekürzt in der Liste.
+  - BAS der verknüpften Stempel endet am Bauteil (z. B. `…-GA-SSK-1000-ASP-01`, `…-RLT-ABL-1010-ABV-01`, `…-HZG-HZK-1010-PPE01`).
+  - ASP01: 35 Stempel auf zwei Listenblättern (55 Zeilen je Blatt), Leerzeilen zwischen den Quellblättern, Summe L1/L2/L3 29,00/30,20/29,00 A und AV/SV 18,96/3,47 kW (von Hand nachgerechnet), Einspeisung 32 A. Auf dem vollen ersten Blatt sind die Trennlinien BAS, LVB und Regelstruktur eingefroren, auf dem zweiten nicht. ASP02: ein Blatt, Einspeisung 16 A.
+  - PDF (162 Seiten): ASP-Deckblatt, ASP-Summe, Anlagenleistungsliste 1/2 und 2/2, dann die Anlagen; das Inhaltsverzeichnis führt die Listen unter dem ASP mit Seitenzahl.
+
 ## [2.2.1] - 2026-10-29
 
 ### Changed

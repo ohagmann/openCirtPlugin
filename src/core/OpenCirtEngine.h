@@ -116,6 +116,66 @@ struct OcTextWidthResult {
     int skipCount = 0;              ///< Attribute ohne Zellzuordnung
 };
 
+// ----------------------------------------------------------------------------
+// Anlagenleistungsliste
+// ----------------------------------------------------------------------------
+
+/// Ein Leistungsstempel (Stempel mit OC_LISTE = LL) einer Quellzeichnung
+struct OcLlStamp {
+    /// Verbindung zum Geraet ueber die Linie auf GA-Leistungsstempel-Verbindung
+    enum Link {
+        Linked,          ///< Geraet gefunden, BAS gelesen
+        NoLine,          ///< keine Linie am Stempel
+        NoDevice,        ///< Linie endet an keinem Block mit OC_BAS_DP_n
+        NoBasValue       ///< Geraet gefunden, aber sein BAS ist leer
+    };
+
+    int nr = 0;                     ///< [n] aus OC_ANLAGE, 0 ohne Nummer
+    QString anlage;                 ///< OC_ANLAGE, z. B. "[2] Zuluftventilator"
+    QVector<QPair<QString, QString>> zeilen;   ///< OC_TEXT_Zn_S1 / _S2, n = 1..16
+    QString bemerkung;              ///< OC_BEMERKUNG
+    Link link = NoLine;
+    QString bas;                    ///< BAS des Geraets bis einschliesslich OC_AKS
+    QString deviceAks;              ///< OC_AKS des Geraets
+    bool basCut = true;             ///< false: OC_AKS stand nicht im BAS, BAS ungekuerzt
+    double x = 0, y = 0;            ///< Einfuegepunkt
+};
+
+/// Was eine Quellzeichnung zur Anlagenleistungsliste beitraegt
+struct OcLlScan {
+    QVector<OcLlStamp> stamps;      ///< nach [n] sortiert
+    QString zeichnungsnummer;       ///< Plankopf ZEICHNUNGSNUMMER
+    QString ortskennzeichen;        ///< Plankopf ORTSKENNZEICHEN
+    bool schrankBlatt = false;      ///< Blatt traegt das Bauteil ASP-* (Schrankblatt)
+};
+
+/// Lage der Liste auf dem Listenblatt, aus der Vorlage gelesen
+struct OcLlLayout {
+    bool ok = false;
+    QString error;
+    double x0 = 0, y0 = 0;          ///< linke obere Ecke des ASP-Bands
+    double hAsp = 5, hKopf = 10, hZeile = 5, hSumme = 10;
+    double yMin = 0;                ///< tiefste erlaubte Unterkante (ueber dem Plankopf)
+
+    /// Zeilen unter Band und Kopf bis yMin
+    int rowsPerPage() const;
+};
+
+/// Inhalt eines Listenblatts
+struct OcLlPage {
+    OcPairs aspBand;                ///< OC_LL_ASP, OC_LL_ASP_BEREICH, OC_LL_ASP_STANDORT
+    QVector<OcPairs> rows;          ///< leere Liste = Leerzeile
+    bool withSumme = false;
+    OcPairs summe;                  ///< OC_LL_SUM_*, OC_LL_EINSPEISUNG
+};
+
+struct OcLlBuildResult {
+    bool ok = false;
+    int rows = 0;                   ///< eingefuegte Zeilen (mit Leerzeilen)
+    QStringList frozenLayers;       ///< ausgeblendete Trennlinien
+    QString error;
+};
+
 // ============================================================================
 // Hilfsfunktionen ohne Zeichnung
 // ============================================================================
@@ -262,6 +322,26 @@ public:
                           OcFillState& state, OcLogFile* log = nullptr);
 
     OcTextWidthResult textBreitenAnpassen();
+
+    // ------------------------------------------------------------------
+    // Anlagenleistungsliste
+    // ------------------------------------------------------------------
+
+    /// Leistungsstempel (OC_LISTE enthaelt LL) mit ihren Zeilen lesen und je
+    /// Stempel das Geraet am anderen Ende der Linie auf dem Layer
+    /// GA-Leistungsstempel-Verbindung suchen. Ein Linienende gehoert zu einem
+    /// Block, wenn es hoechstens tol von dessen sichtbarer Geometrie entfernt
+    /// liegt (ausgeblendete Teile parametrischer Bloecke zaehlen nicht).
+    OcLlScan scanLeistungsstempel(double tol = 0.5) const;
+
+    /// Lage der Liste in der Listenvorlage: ASP-Band der Vorlage als Anker,
+    /// Hoehen aus den Blockdefinitionen, Unterkante ueber dem Plankopf.
+    OcLlLayout leistungslisteLayout() const;
+
+    /// Musterzeilen der Vorlage entfernen und die Liste neu einsetzen:
+    /// ASP-Band, Kopf, Zeilen, bei Bedarf Summe. Trennlinien, die die Liste
+    /// kreuzen, werden eingefroren.
+    OcLlBuildResult buildLeistungsliste(const OcLlLayout& layout, const OcLlPage& page);
 
 private:
     struct Impl;
