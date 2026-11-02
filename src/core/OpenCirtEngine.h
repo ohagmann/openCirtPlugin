@@ -134,6 +134,7 @@ struct OcLlStamp {
     QString anlage;                 ///< OC_ANLAGE, z. B. "[2] Zuluftventilator"
     QVector<QPair<QString, QString>> zeilen;   ///< OC_TEXT_Zn_S1 / _S2, n = 1..16
     QString bemerkung;              ///< OC_BEMERKUNG
+    QString absicherung;            ///< OC_ABSICHERUNG
     Link link = NoLine;
     QString bas;                    ///< BAS des Geraets bis einschliesslich OC_AKS
     QString deviceAks;              ///< OC_AKS des Geraets

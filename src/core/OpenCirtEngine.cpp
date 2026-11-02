@@ -2341,6 +2341,7 @@ OcLlScan OcDrawing::scanLeistungsstempel(double tol) const
         const QRegularExpressionMatch m = nrRe.match(st.anlage);
         st.nr = m.hasMatch() ? m.captured(1).toInt() : 0;
         st.bemerkung = Impl::lastOrEmpty(ins, QStringLiteral("OC_BEMERKUNG"));
+        st.absicherung = Impl::lastOrEmpty(ins, QStringLiteral("OC_ABSICHERUNG"));
         st.x = ins.x;
         st.y = ins.y;
         for (int n = 1; n <= 16; ++n) {

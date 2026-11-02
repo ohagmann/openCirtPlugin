@@ -2,11 +2,16 @@
  * @file Leistungsliste.h
  * @brief Anlagenleistungsliste je ASP aus den Leistungsstempeln
  *
- * Die Werte stehen fertig in den Stempeln: sie kommen aus der Erstellliste
- * und werden beim Projektaufbau in die Stempelzeilen geschrieben. Hier wird
- * nichts nachgerechnet, nur zugeordnet: jede Stempelzeile landet ueber ihre
- * Bezeichnung (OC_TEXT_Zn_S1) in der passenden Spalte der Liste. Gerechnet
- * werden nur die Summen der Strom- und Leistungsspalten und die Einspeisung.
+ * Die Eingaben stehen in den Stempeln: sie kommen aus der Erstellliste und
+ * werden beim Projektaufbau in die Stempelzeilen geschrieben. Jede
+ * Stempelzeile wird ueber ihre Bezeichnung (OC_TEXT_Zn_S1) erkannt. Anzahl,
+ * Pzu-Einzeln, G-Faktor, Art d. Antr. und Spannung werden uebernommen,
+ * gerechnet werden:
+ *   Pzu-Ges.        = Anzahl * Pzu-Einzeln * Gleichzeitigkeit
+ *   Strom           = Strom (Stempel) * Anzahl * Gleichzeitigkeit,
+ *                     400 V auf L1, L2 und L3, 230 V reihum auf eine Phase
+ *   AV bzw. SV      = Pzu-Ges. in der Spalte der Netzart aus dem Stempel
+ *   Summe, Einspeisung je ASP.
  *
  * Reine Qt-Logik ohne Zeichnung; Lesen der Stempel und Aufbau der Blaetter
  * stehen in OcDrawing (OpenCirtEngine).
@@ -36,10 +41,11 @@ QString columnForLabel(const QString& label);
 QString aliasText();
 
 /// Zeile der Liste aus einem Stempel. Bereich und Standort kommen aus dem
-/// Plankopf des Blattes. Stempelzeilen, die nach Strom ohne Phase oder Netz
-/// aussehen, werden nicht zugeordnet und in unmapped gemeldet.
+/// Plankopf des Blattes. phase zaehlt die 230-V-Verbraucher des ASP und legt
+/// fest, auf welche Phase der naechste kommt (0 = L1, 1 = L2, 2 = L3, ...).
+/// Fehlende oder unklare Eingaben stehen danach in hinweise.
 OcPairs zeile(const OcLlStamp& stamp, int pos, const QString& bereich,
-              const QString& standort, QStringList* unmapped = nullptr);
+              const QString& standort, int& phase, QStringList* hinweise = nullptr);
 
 /// Fuehrende Zahl eines Textes ("5,9 A" -> 5.9). ok = false ohne Zahl.
 double parseNumber(const QString& text, bool* ok = nullptr);

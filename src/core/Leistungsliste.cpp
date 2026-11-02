@@ -5,6 +5,7 @@
 
 #include "Leistungsliste.h"
 
+#include <QMap>
 #include <QRegularExpression>
 
 #include <algorithm>
@@ -13,36 +14,34 @@
 namespace BatchProcessing {
 namespace OcLl {
 
+double parseNumber(const QString& text, bool* ok);
+
 namespace {
 
 struct Alias {
-    const char* column;
+    const char* key;        ///< Listenspalte OC_LL_... oder Eingabe STROM / NETZ
     QStringList labels;     ///< normalisiert, siehe normLabel
 };
 
-/// Bezeichnungen der Stempelzeilen je Spalte. Die Bezeichnungen kommen aus
-/// der Erstellliste; erkannt werden die Spaltenkoepfe der Liste und die
-/// Bezeichnungen, die die Vorlagen-Stempel schon tragen.
+/// Bezeichnungen der Stempelzeilen. Die Bezeichnungen kommen aus der
+/// Erstellliste; erkannt werden die Spaltenkoepfe der Liste und die
+/// Bezeichnungen, die die Vorlagen-Stempel tragen. Die ersten fuenf werden so
+/// uebernommen, wie sie im Stempel stehen; STROM und NETZ sind nur Eingaben
+/// der Rechnung.
 const QVector<Alias>& aliases()
 {
     static const QVector<Alias> table = {
         { "OC_LL_ANZAHL",      { "anzahl" } },
         { "OC_LL_P_EINZELN",   { "pzu-einzeln", "pzu einzeln", "leistung", "leistung einzeln",
                                  QString::fromUtf8("leistung je st\xC3\xBC" "ck") } },
-        { "OC_LL_P_GES",       { "pzu-ges", "pzu ges", "pzu-gesamt", "pzu gesamt",
-                                 "leistung gesamt", "leistung ges" } },
         { "OC_LL_GLZ",         { "g-faktor", "gleichzeitigkeit", "gleichzeitigkeitsfaktor",
                                  "glz", "glz-faktor" } },
         { "OC_LL_ART",         { "art d. antr", "art d antr", "art des antriebes",
                                  "art des antriebs", "antriebsart", "antrieb",
                                  "ventilatortyp", "erhitzertyp" } },
-        { "OC_LL_I_L1",        { "strom l1", "i l1", "i-l1", "l1" } },
-        { "OC_LL_I_L2",        { "strom l2", "i l2", "i-l2", "l2" } },
-        { "OC_LL_I_L3",        { "strom l3", "i l3", "i-l3", "l3" } },
         { "OC_LL_SPANNUNG",    { "spannung" } },
-        { "OC_LL_P_AV",        { "pzu av", "pzu-av", "p av", "av" } },
-        { "OC_LL_P_SV",        { "pzu sv", "pzu-sv", "p sv", "sv" } },
-        { "OC_LL_ABSICHERUNG", { "absicherung" } },
+        { "STROM",             { "strom", "nennstrom", QString::fromUtf8("strom je st\xC3\xBC" "ck") } },
+        { "NETZ",              { "netz", "netzart" } },
     };
     return table;
 }
@@ -52,6 +51,25 @@ QString deNumber(double value, int decimals)
     QString text = QString::number(value, 'f', decimals);
     text.replace(QLatin1Char('.'), QLatin1Char(','));
     return text;
+}
+
+/// Spannung in V: die groesste Zahl im Text ("400", "3~400 V", "1~230" -> 230)
+double voltageOf(const QString& text, bool* ok)
+{
+    static const QRegularExpression re(QStringLiteral("\\d+(?:[.,]\\d+)?"));
+    double best = 0.0;
+    bool any = false;
+    QRegularExpressionMatchIterator it = re.globalMatch(text);
+    while (it.hasNext()) {
+        bool good = false;
+        const double v = parseNumber(it.next().captured(0), &good);
+        if (good) {
+            best = any ? std::max(best, v) : v;
+            any = true;
+        }
+    }
+    if (ok) *ok = any;
+    return best;
 }
 
 } // namespace
@@ -74,7 +92,7 @@ QString columnForLabel(const QString& label)
     const QString n = normLabel(label);
     if (n.isEmpty()) return QString();
     for (const Alias& a : aliases()) {
-        if (a.labels.contains(n)) return QLatin1String(a.column);
+        if (a.labels.contains(n)) return QLatin1String(a.key);
     }
     return QString();
 }
@@ -83,48 +101,82 @@ QString aliasText()
 {
     QStringList parts;
     for (const Alias& a : aliases()) {
-        parts << QStringLiteral("%1 = %2").arg(QLatin1String(a.column).mid(6),
-                                              a.labels.join(QStringLiteral(" | ")));
+        QString key = QLatin1String(a.key);
+        if (key.startsWith(QLatin1String("OC_LL_"))) key = key.mid(6);
+        parts << QStringLiteral("%1 = %2").arg(key, a.labels.join(QStringLiteral(" | ")));
     }
     return parts.join(QStringLiteral("; "));
 }
 
 OcPairs zeile(const OcLlStamp& stamp, int pos, const QString& bereich,
-              const QString& standort, QStringList* unmapped)
+              const QString& standort, int& phase, QStringList* hinweise)
 {
+    // Stempelzeilen nach Bezeichnung; die erste passende Zeile gilt
+    QMap<QString, QString> in;
+    for (const auto& z : stamp.zeilen) {
+        const QString key = columnForLabel(z.first);
+        if (!key.isEmpty() && !in.contains(key)) in.insert(key, z.second.trimmed());
+    }
+
     OcPairs row;
     row << qMakePair(QStringLiteral("OC_LL_POS"), QString::number(pos))
         << qMakePair(QStringLiteral("OC_LL_BAS"), stamp.bas)
         << qMakePair(QStringLiteral("OC_LL_BEREICH"), bereich)
         << qMakePair(QStringLiteral("OC_LL_STANDORT"), standort);
+    for (const char* key : { "OC_LL_ANZAHL", "OC_LL_P_EINZELN", "OC_LL_GLZ",
+                             "OC_LL_ART", "OC_LL_SPANNUNG" }) {
+        row << qMakePair(QString::fromLatin1(key), in.value(QLatin1String(key)));
+    }
 
-    QStringList taken;
-    QStringList stromOhnePhase, netz;
-    for (const auto& z : stamp.zeilen) {
-        const QString column = columnForLabel(z.first);
-        if (column.isEmpty()) {
-            const QString n = normLabel(z.first);
-            if (n == QLatin1String("strom")) stromOhnePhase << z.first.trimmed();
-            else if (n.startsWith(QLatin1String("netz"))) netz << z.first.trimmed();
-            continue;
-        }
-        if (taken.contains(column)) continue;   // erste passende Zeile gilt
-        taken << column;
-        row << qMakePair(column, z.second.trimmed());
+    auto hinweis = [hinweise](const QString& text) { if (hinweise) *hinweise << text; };
+
+    // Anzahl und Gleichzeitigkeit: ohne Angabe 1
+    bool okN = false, okG = false, okP = false, okI = false, okU = false;
+    double n = parseNumber(in.value(QStringLiteral("OC_LL_ANZAHL")), &okN);
+    if (!okN) { n = 1.0; hinweis(QStringLiteral("Anzahl fehlt, 1 angenommen")); }
+    double g = parseNumber(in.value(QStringLiteral("OC_LL_GLZ")), &okG);
+    if (!okG) { g = 1.0; hinweis(QStringLiteral("Gleichzeitigkeit fehlt, 1 angenommen")); }
+
+    // Pzu-Ges. = Anzahl * Pzu-Einzeln * Gleichzeitigkeit
+    const double p = parseNumber(in.value(QStringLiteral("OC_LL_P_EINZELN")), &okP);
+    const double pges = n * p * g;
+    if (okP) {
+        row << qMakePair(QStringLiteral("OC_LL_P_GES"), formatNumber(pges));
+    } else {
+        hinweis(QStringLiteral("Leistung fehlt"));
     }
-    // Strom ohne Phase und Netz AV/SV lassen sich ohne Rechnung keiner Spalte
-    // zuordnen. Auffallen soll das nur, wenn der Stempel die Werte nicht
-    // ohnehin in eigenen Zeilen (Strom L1..L3, Pzu AV/SV) traegt.
-    if (unmapped) {
-        const bool hasPhase = taken.contains(QStringLiteral("OC_LL_I_L1"))
-            || taken.contains(QStringLiteral("OC_LL_I_L2"))
-            || taken.contains(QStringLiteral("OC_LL_I_L3"));
-        const bool hasNetz = taken.contains(QStringLiteral("OC_LL_P_AV"))
-            || taken.contains(QStringLiteral("OC_LL_P_SV"));
-        if (!hasPhase) *unmapped << stromOhnePhase;
-        if (!hasNetz) *unmapped << netz;
+
+    // Strom je Phase = Strom * Anzahl * Gleichzeitigkeit; 400 V auf L1-L3,
+    // 230 V reihum auf L1, L2, L3, L1 ...
+    const double i = parseNumber(in.value(QStringLiteral("STROM")), &okI);
+    const double u = voltageOf(in.value(QStringLiteral("OC_LL_SPANNUNG")), &okU);
+    if (!okI) {
+        hinweis(QStringLiteral("Strom fehlt"));
+    } else if (okU && u >= 380.0) {
+        const QString itext = formatNumber(i * n * g);
+        row << qMakePair(QStringLiteral("OC_LL_I_L1"), itext)
+            << qMakePair(QStringLiteral("OC_LL_I_L2"), itext)
+            << qMakePair(QStringLiteral("OC_LL_I_L3"), itext);
+    } else if (okU && u >= 180.0 && u <= 260.0) {
+        const QString tag = QStringLiteral("OC_LL_I_L%1").arg(phase % 3 + 1);
+        ++phase;
+        row << qMakePair(tag, formatNumber(i * n * g));
+    } else {
+        hinweis(QStringLiteral("Spannung weder 230 noch 400 V, Strom nicht verteilt"));
     }
-    row << qMakePair(QStringLiteral("OC_LL_BEMERKUNG"), stamp.bemerkung.trimmed());
+
+    // Pzu-Ges. in die Spalte der Netzart aus dem Stempel
+    const QString netz = in.value(QStringLiteral("NETZ")).toUpper();
+    const bool av = netz.contains(QLatin1String("AV"));
+    const bool sv = netz.contains(QLatin1String("SV"));
+    if (okP) {
+        if (av && !sv) row << qMakePair(QStringLiteral("OC_LL_P_AV"), formatNumber(pges));
+        else if (sv && !av) row << qMakePair(QStringLiteral("OC_LL_P_SV"), formatNumber(pges));
+        else hinweis(QStringLiteral("Netz weder AV noch SV"));
+    }
+
+    row << qMakePair(QStringLiteral("OC_LL_ABSICHERUNG"), stamp.absicherung.trimmed())
+        << qMakePair(QStringLiteral("OC_LL_BEMERKUNG"), stamp.bemerkung.trimmed());
     return row;
 }
 

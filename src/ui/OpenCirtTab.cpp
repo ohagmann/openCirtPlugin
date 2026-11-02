@@ -5848,8 +5848,8 @@ void OpenCirtTab::createLeistungslisten(RunCounts& counts) {
         aspSheets[aspFolder] << p;
     }
 
-    QStringList unmapped;
     int ohneGeraet = 0;
+    int mitHinweis = 0;
     int aspCount = 0;
     beginPhase("Leistungslisten", aspOrder.size());
     for (const QString& aspFolder : aspOrder) {
@@ -5858,6 +5858,7 @@ void OpenCirtTab::createLeistungslisten(RunCounts& counts) {
         QVector<OcLl::Gruppe> gruppen;
         OcLl::Summen summen;
         int pos = 1;
+        int phase = 0;      // 230-V-Verbraucher je ASP reihum ab L1
 
         for (const QString& p : aspSheets.value(aspFolder)) {
             const OcLlScan scan = m_llScans.value(pathKey(p));
@@ -5867,12 +5868,17 @@ void OpenCirtTab::createLeistungslisten(RunCounts& counts) {
             if (scan.stamps.isEmpty()) continue;
             OcLl::Gruppe gruppe;
             for (const OcLlStamp& st : scan.stamps) {
+                QStringList hinweise;
                 const OcPairs row = OcLl::zeile(st, pos++, scan.zeichnungsnummer.trimmed(),
-                                                scan.ortskennzeichen.trimmed(), &unmapped);
+                                                scan.ortskennzeichen.trimmed(), phase, &hinweise);
                 summen.add(row);
                 gruppe << row;
                 const QString where = QString("%1  -  %2")
                     .arg(root.relativeFilePath(p), st.anlage.trimmed());
+                if (!hinweise.isEmpty()) {
+                    ++mitHinweis;
+                    log(QString("  %1: %2").arg(where, hinweise.join(", ")));
+                }
                 if (st.link != OcLlStamp::Linked) {
                     ++ohneGeraet;
                     log(QString("  BAS bleibt leer (kein Geraet): %1").arg(where));
@@ -5950,13 +5956,9 @@ void OpenCirtTab::createLeistungslisten(RunCounts& counts) {
         stepDone(aspName);
     }
 
-    if (!unmapped.isEmpty()) {
-        QStringList distinct;
-        for (const QString& u : unmapped) {
-            if (!distinct.contains(u)) distinct << u;
-        }
-        log(QString("Hinweis: %1 Stempelzeilen ohne passende Spalte (%2). Erkannte Bezeichnungen: %3")
-            .arg(unmapped.size()).arg(distinct.join(", "), OcLl::aliasText()));
+    if (mitHinweis > 0) {
+        log(QString("Hinweis: %1 Stempel mit fehlenden oder unklaren Eingaben (siehe oben). "
+                    "Erkannte Stempelzeilen: %2").arg(mitHinweis).arg(OcLl::aliasText()));
     }
     if (ohneGeraet > 0) {
         log(QString("Leistungsstempel ohne Geraet: %1 (BAS leer)").arg(ohneGeraet));
