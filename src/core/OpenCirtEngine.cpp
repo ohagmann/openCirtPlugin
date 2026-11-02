@@ -2358,13 +2358,13 @@ OcLlScan OcDrawing::scanLeistungsstempel(double tol) const
                 const double da = distanceTo(ins, e.a);
                 const double db = distanceTo(ins, e.b);
                 if (std::min(da, db) > tol) continue;
-                const AcGePoint3d far = (da <= db) ? e.b : e.a;
+                const AcGePoint3d farEnd = (da <= db) ? e.b : e.a;
 
                 int bestK = -1;
                 double bestDist = kLlInfinity;
                 for (int k = 0; k < deviceIdx.size(); ++k) {
                     if (!deviceInModel.at(k)) continue;
-                    const double dist = distanceTo(d->inserts.at(deviceIdx.at(k)), far);
+                    const double dist = distanceTo(d->inserts.at(deviceIdx.at(k)), farEnd);
                     if (dist <= tol && dist < bestDist) {
                         bestDist = dist;
                         bestK = k;
