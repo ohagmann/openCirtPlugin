@@ -20,6 +20,12 @@ Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei re
 - Die Listenvorlage gehört in den Hauptordner `04- Vorlagen` (neben Inhaltsverzeichnis und `OC_VORLAGE_DIN_A2_V14`) und darf nicht zusätzlich in einem Unterordner liegen: „Projekt aufbauen“ sucht Vorlagen in allen Unterordnern und bricht bei gleichen Namen mit „Mehrdeutige Vorlagen“ ab.
 - Listenblöcke: Kopf, Zeile und Summe gibt es als V3 mit G-Faktor vor Pzu-Ges. (erst die Eingaben, dann das Ergebnis). openCirt nimmt in der Listenvorlage je Block die höchste Version; die Vorlage muss die Definitionen von ASP-Band, Kopf, Zeile und Summe enthalten.
 
+### Fixed
+- Windows: Eine Variable hieß `far`, unter Windows ein leeres Makro; MSVC brach mit C2513/C2059 ab.
+
+### Build
+- **Windows-Build unter Linux.** `CROSS_BUILD_WINDOWS.sh` baut die `.brx` mit clang-cl und lld-link gegen MSVC-Bibliotheken, Windows SDK und Qt msvc2022_64 (Einrichtung im README). `CLEAN_BUILD.bat` unter Windows bleibt unverändert.
+
 ### Geprüft (Linux)
 - Testprojekt aus den Vorlagen eines laufenden Projekts (Kopie, Listenvorlage in den Hauptordner verschoben, `Einspeisungen.csv` 16…100 A), Test-Erstellliste mit 35 Anlagen in zwei ASP und 37 Leistungsstempeln (Schaltschrank-Pauschale, Abluftanlage, KVS-Anlage mit drei Stempeln, 31 Heizkreise), BricsCAD V27.1.05 auf eigenem Bildschirm: Projekt aufbauen, Projekt erstellen mit Haken, PDF publizieren.
   - Vorprüfung meldet den Stempel ohne Linie (KVS „[2] VE UWP“) und das Gerät ohne `OC_AKS` (KVS-Fortluftventilator) in einer Sammelmeldung; nach „Fortfahren“ bleibt der BAS des ersten leer, der des zweiten steht ungekürzt in der Liste.
@@ -27,6 +33,9 @@ Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei re
   - ASP01: 35 Stempel auf zwei Listenblättern (55 Zeilen je Blatt), Leerzeilen zwischen den Quellblättern, Summe L1/L2/L3 29,00/30,20/29,00 A und AV/SV 18,96/3,47 kW (von Hand nachgerechnet), Einspeisung 32 A. Auf dem vollen ersten Blatt sind die Trennlinien BAS, LVB und Regelstruktur eingefroren, auf dem zweiten nicht. ASP02: ein Blatt, Einspeisung 16 A.
   - PDF (162 Seiten): ASP-Deckblatt, ASP-Summe, Anlagenleistungsliste 1/2 und 2/2, dann die Anlagen; das Inhaltsverzeichnis führt die Listen unter dem ASP mit Seitenzahl.
 - Rechnung (Nachtrag 02.11.): Test-Erstellliste mit 13 Leistungsstempeln wie in den Vorlagen („Strom [A]“, „Leistung [kW]“, „Netz [AV / SV]“, Gleichzeitigkeit 1,00 und 0,80, ein Heizkreis mit Anzahl 2), `OC_ABSICHERUNG` aus der Erstellliste. Jede Zeile von Hand nachgerechnet: z. B. Abluft 2 × 3,70 kW × 0,8 = 5,92 kW und 5,9 A × 2 × 0,8 = 9,44 A auf L1–L3; 230-V-Verbraucher in Listenreihenfolge auf L1, L2, L3, L1, L2 (1,80 A bei Anzahl 2) …; ASP02 beginnt wieder mit L1. Summe L1/L2/L3 26,54/27,14/25,34 A, AV/SV 13,08/3,47 kW, Einspeisung 32 A.
+
+### Geprüft (Windows)
+- Windows-Build für V27 am 2026-11-02 unter Linux erzeugt (`CROSS_BUILD_WINDOWS.sh`, clang-cl 20.1, MSVC 14.44, Windows SDK 10.0.26100, Qt 6.10.3): `opencirt-2.3.0-v27.brx` liegt im Beispielprojekt (bindet `brx27.dll` und Qt6 ein) und ersetzt `opencirt-2.2.1-v27.brx`. Vom Anwender in BricsCAD V27 unter Windows geladen, die Pfadauswahl funktioniert; weitere Funktionen unter Windows noch nicht geprüft.
 
 ## [2.2.1] - 2026-10-29
 

@@ -107,6 +107,20 @@ $TC/venv/bin/aqt install-qt linux desktop 6.8.2 linux_gcc_64 -O $TC/Qt    # V26,
 
 Fehlen die OpenGL-Entwicklerdateien im System, genügt es, die Pakete herunterzuladen und nach `$TC/sysroot` zu entpacken (`apt-get download libgl-dev libglx-dev libopengl-dev libegl-dev libgles-dev libglvnd-dev libvulkan-dev libxkbcommon-dev libx11-dev x11proto-dev`, dann je Paket `dpkg -x <paket>.deb $TC/sysroot`).
 
+### Windows-Build unter Linux
+
+```sh
+./CROSS_BUILD_WINDOWS.sh
+```
+
+Baut die `.brx` ohne Windows-Rechner: clang-cl und lld-link (LLVM) gegen die MSVC-Bibliotheken, das Windows SDK und Qt für msvc2022_64; moc, uic und rcc kommen vom Linux-Qt derselben Reihe (siehe oben). Das fertige Plugin liegt unter `build_windows_cross/Release/opencirt-<Version>-v<NN>.brx` und wird wie beim Windows-Build nach `sample_project/00- BricsCAD Plugin/00- Windows Version/` gelegt. `./CROSS_BUILD_WINDOWS.sh 26` baut für V26. Die Pfade lassen sich über Umgebungsvariablen ändern (siehe Kopf des Skripts), Vorgabe ist wieder `~/.local/opt/opencirt-toolchain`:
+
+- LLVM ab Version 20 mit `clang-cl`, `lld-link`, `llvm-lib`, `llvm-rc` und `llvm-mt` unter `$TC/llvm20/usr/lib/llvm-20/bin` (`OC_LLVM_BIN`). Ohne Systemrechte: `apt-get download clang-20 lld-20 llvm-20 llvm-20-linker-tools llvm-20-runtime libclang1-20 libclang-cpp20 libclang-common-20-dev`, je Paket `dpkg -x <paket>.deb $TC/llvm20`, dann `ln -s clang $TC/llvm20/usr/lib/llvm-20/bin/clang-cl`.
+- MSVC-Bibliotheken mit ATL und Windows SDK im `/winsysroot`-Layout unter `$TC/winsysroot` (`OC_WINSYSROOT`), z. B. mit [xwin](https://github.com/Jake-Shadle/xwin):
+  `xwin --accept-license --arch x86_64 --variant desktop --include-atl splat --use-winsysroot-style --preserve-ms-arch-notation --output $TC/winsysroot`.
+  Mit `--accept-license` werden die Lizenzbedingungen von Microsoft angenommen; die Dateien gehören nicht ins Repository.
+- Qt für Windows: `$TC/venv/bin/aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -O $TC/Qt-win` (V27; für V26 6.8.3).
+
 ### Manuelle Build-Schritte
 
 ```cmd
@@ -193,6 +207,7 @@ Die Bedienungsanleitung mit Projektstruktur, Erstellliste, Symbolen und allen Sc
 ├── CMakeLists.txt              Root-Build-Konfiguration
 ├── CLEAN_BUILD.bat             Build-Skript Windows
 ├── CLEAN_BUILD.sh              Build-Skript Linux
+├── CROSS_BUILD_WINDOWS.sh      Windows-Build unter Linux
 ├── LICENSE                     BSL 1.1 Lizenz
 ├── .gitignore
 ├── docs/
@@ -200,7 +215,8 @@ Die Bedienungsanleitung mit Projektstruktur, Erstellliste, Symbolen und allen Sc
 ├── tools/
 │   ├── Close-BricsCAD.ps1      Beendet BricsCAD vor dem Build (Windows)
 │   ├── copy_plugin.cmake       Legt das fertige Plugin ins Beispielprojekt (ggf. zusätzlich nach OC_PLUGIN_DEST)
-│   └── oc_summen_vergleich.py  Prüfwerkzeug für Summenblätter
+│   ├── oc_summen_vergleich.py  Prüfwerkzeug für Summenblätter
+│   └── windows-cross.cmake     CMake-Toolchain für den Windows-Build unter Linux
 ├── external/
 │   └── brx_sdk_v<NN>/          BRX SDK je BricsCAD-Version (nicht im Repository)
 ├── sample_project/
