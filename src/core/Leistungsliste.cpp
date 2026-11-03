@@ -108,7 +108,7 @@ QString aliasText()
     return parts.join(QStringLiteral("; "));
 }
 
-OcPairs zeile(const OcLlStamp& stamp, int pos, const QString& bereich,
+OcPairs zeile(const OcLlStamp& stamp, const QString& bereich,
               const QString& standort, int& phase, QStringList* hinweise)
 {
     // Stempelzeilen nach Bezeichnung; die erste passende Zeile gilt
@@ -119,8 +119,7 @@ OcPairs zeile(const OcLlStamp& stamp, int pos, const QString& bereich,
     }
 
     OcPairs row;
-    row << qMakePair(QStringLiteral("OC_LL_POS"), QString::number(pos))
-        << qMakePair(QStringLiteral("OC_LL_BAS"), stamp.bas)
+    row << qMakePair(QStringLiteral("OC_LL_BAS"), stamp.bas)
         << qMakePair(QStringLiteral("OC_LL_BEREICH"), bereich)
         << qMakePair(QStringLiteral("OC_LL_STANDORT"), standort);
     for (const char* key : { "OC_LL_ANZAHL", "OC_LL_P_EINZELN", "OC_LL_GLZ",
@@ -313,6 +312,14 @@ QVector<OcLlPage> paginate(const OcPairs& aspBand, const QVector<Gruppe>& gruppe
     cur.withSumme = true;
     cur.summe = summe;
     pages.append(cur);
+
+    // Pos. ueber alle Zeilen durch, auch die Leerzeilen
+    int pos = 1;
+    for (OcLlPage& page : pages) {
+        for (OcPairs& row : page.rows) {
+            row.prepend(qMakePair(QStringLiteral("OC_LL_POS"), QString::number(pos++)));
+        }
+    }
     return pages;
 }
 

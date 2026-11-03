@@ -43,8 +43,9 @@ QString aliasText();
 /// Zeile der Liste aus einem Stempel. Bereich und Standort kommen aus dem
 /// Plankopf des Blattes. phase zaehlt die 230-V-Verbraucher des ASP und legt
 /// fest, auf welche Phase der naechste kommt (0 = L1, 1 = L2, 2 = L3, ...).
-/// Fehlende oder unklare Eingaben stehen danach in hinweise.
-OcPairs zeile(const OcLlStamp& stamp, int pos, const QString& bereich,
+/// Fehlende oder unklare Eingaben stehen danach in hinweise. Die Pos.
+/// vergibt paginate.
+OcPairs zeile(const OcLlStamp& stamp, const QString& bereich,
               const QString& standort, int& phase, QStringList* hinweise = nullptr);
 
 /// Fuehrende Zahl eines Textes ("5,9 A" -> 5.9). ok = false ohne Zahl.
@@ -80,6 +81,8 @@ using Gruppe = QVector<OcPairs>;
 /// nach der letzten eine Leerzeile und die Summe. Eine Gruppe beginnt auf
 /// dem naechsten Blatt, wenn sie dort ganz Platz hat, hier aber nicht; nur
 /// laengere Gruppen werden geteilt. Jedes Blatt traegt ASP-Band und Kopf.
+/// Die Pos. (OC_LL_POS) laeuft ab 1 ueber alle Zeilen der Blaetter durch,
+/// Leerzeilen eingeschlossen.
 QVector<OcLlPage> paginate(const OcPairs& aspBand, const QVector<Gruppe>& gruppen,
                            int rowsPerPage, int summeRows, const OcPairs& summe);
 

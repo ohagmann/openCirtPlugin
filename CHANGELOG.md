@@ -5,6 +5,17 @@ Alle wesentlichen Änderungen am openCirt-Plugin werden in dieser Datei dokument
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei reinen Änderungen an Vorlagen, LISP-Skripten, Dokumentation oder Repo-Konfiguration.
 
+## [2.3.1] - 2026-11-03
+
+### Changed
+- **Anlagenleistungsliste: Pos. läuft durch.** Auch die Leerzeilen zwischen den Quellblättern und vor der Summe tragen eine Nummer. Die Pos. zählt je ASP ab 1 über alle Zeilen und Listenblätter.
+
+### Geprüft (Linux)
+- Testprojekt wie bei 2.3.0, BricsCAD V27.1.05 auf eigenem Bildschirm, Projekt erstellen mit Haken:
+  - 13 Stempel: ASP01 Pos. 1–22 auf einem Blatt, die Leerzeilen zwischen den Quellblättern und vor der Summe tragen die geraden Nummern 2, 4, 8 … 22; die Summe bleibt ohne Nummer. ASP02 beginnt wieder mit 1 (Stempel 1, Leerzeile 2). Summen unverändert wie bei 2.3.0 (26,54/27,14/25,34 A).
+  - 37 Stempel: ASP01 auf zwei Blättern, Blatt 1 Pos. 1–55, Blatt 2 weiter mit 56–67 und der Summe; ASP02 Pos. 1–4.
+- Windows-Build `opencirt-2.3.1-v27.brx` unter Linux erzeugt (`CROSS_BUILD_WINDOWS.sh`), unter Windows noch nicht geladen.
+
 ## [2.3.0] - 2026-11-02
 
 ### Added

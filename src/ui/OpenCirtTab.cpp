@@ -5857,7 +5857,7 @@ void OpenCirtTab::createLeistungslisten(RunCounts& counts) {
         QString standortAsp;
         QVector<OcLl::Gruppe> gruppen;
         OcLl::Summen summen;
-        int pos = 1;
+        int stempel = 0;
         int phase = 0;      // 230-V-Verbraucher je ASP reihum ab L1
 
         for (const QString& p : aspSheets.value(aspFolder)) {
@@ -5869,8 +5869,9 @@ void OpenCirtTab::createLeistungslisten(RunCounts& counts) {
             OcLl::Gruppe gruppe;
             for (const OcLlStamp& st : scan.stamps) {
                 QStringList hinweise;
-                const OcPairs row = OcLl::zeile(st, pos++, scan.zeichnungsnummer.trimmed(),
+                const OcPairs row = OcLl::zeile(st, scan.zeichnungsnummer.trimmed(),
                                                 scan.ortskennzeichen.trimmed(), phase, &hinweise);
+                ++stempel;
                 summen.add(row);
                 gruppe << row;
                 const QString where = QString("%1  -  %2")
@@ -5946,10 +5947,10 @@ void OpenCirtTab::createLeistungslisten(RunCounts& counts) {
                 ++counts.leistungslisten;
             }
         }
-        counts.llZeilen += pos - 1;
+        counts.llZeilen += stempel;
         log(QString("  %1: %2 Stempel auf %3 Blatt/Blaettern, Summe L1/L2/L3 %4/%5/%6 A, "
                     "Einspeisung %7")
-            .arg(aspName).arg(pos - 1).arg(pages.size())
+            .arg(aspName).arg(stempel).arg(pages.size())
             .arg(OcLl::formatNumber(summen.l1), OcLl::formatNumber(summen.l2),
                  OcLl::formatNumber(summen.l3),
                  einspeisung.isEmpty() ? QString("-") : einspeisung));
