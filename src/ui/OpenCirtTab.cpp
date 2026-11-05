@@ -24,6 +24,7 @@
 #include "OpenCirtTab.h"
 #include "Theming.h"
 #include "BasConfigDialog.h"
+#include "SeitennamenConfigDialog.h"
 #include "../utils/SensorKeywordLoader.h"
 #include "../utils/CsvListWriter.h"
 #include "../core/ProjectBuilder.h"
@@ -461,9 +462,31 @@ void OpenCirtTab::setupUi() {
 
     addSeparator();
 
-    m_btnPublish = createButtonRow(
-        "PDF publizieren",
-        "Alle Zeichnungen als Multi-Sheet PDF mit Inhaltsverzeichnis");
+    // Publish-Zeile explizit (statt createButtonRow), damit der Knopf fuer die
+    // Lesezeichen-Titel hinter dem Beschreibungstext derselben Zeile steht
+    {
+        auto* rowLayout = new QHBoxLayout();
+        m_btnPublish = new QPushButton("PDF publizieren");
+        m_btnPublish->setMinimumWidth(220);
+        m_btnPublish->setMinimumHeight(32);
+        m_btnPublish->setToolTip(
+            "Alle Zeichnungen als Multi-Sheet PDF mit Inhaltsverzeichnis");
+        m_btnSeitennamen = new QPushButton("Seitennamen konfigurieren");
+        m_btnSeitennamen->setMinimumWidth(180);
+        m_btnSeitennamen->setMinimumHeight(32);
+        m_btnSeitennamen->setToolTip(
+            "Titel der PDF-Lesezeichen als Segmentfolge bearbeiten (Text / Attribut)\n"
+            "und als 01- Referenzen/Seitennamen.csv speichern.\n"
+            "Ohne diese Datei gilt der bisherige Aufbau: Nummer-<Zeichnungsnummer,\n"
+            "sonst Dateiname>.");
+        auto* descLabel = new QLabel("Multi-Sheet PDF mit Inhaltsverzeichnis");
+        Theming::setRole(descLabel, Theming::Role::Muted);
+        rowLayout->addWidget(m_btnPublish);
+        rowLayout->addWidget(descLabel);
+        rowLayout->addWidget(m_btnSeitennamen);
+        rowLayout->addStretch();
+        buttonLayout->addLayout(rowLayout);
+    }
 
     m_btnDpExport = createButtonRow(
         "IO-Liste erstellen",
@@ -509,6 +532,7 @@ void OpenCirtTab::setupUi() {
     connect(m_btnDpExport, &QPushButton::clicked, this, &OpenCirtTab::onDatenpunktExport);
     connect(m_btnTestdaten, &QPushButton::clicked, this, &OpenCirtTab::onTestdatenExport);
     connect(m_btnBasConfig, &QPushButton::clicked, this, &OpenCirtTab::onBasKonfigurieren);
+    connect(m_btnSeitennamen, &QPushButton::clicked, this, &OpenCirtTab::onSeitennamenKonfigurieren);
     connect(m_btnBereinigen, &QPushButton::clicked, this, &OpenCirtTab::onProjektBereinigen);
     connect(m_btnProjektAufbau, &QPushButton::clicked, this, &OpenCirtTab::onProjektAufbauen);
 }
@@ -773,6 +797,7 @@ void OpenCirtTab::updateButtonStates() {
     m_btnFullProject->setEnabled(enabled);
     m_btnBereinigen->setEnabled(enabled);
     m_btnBasConfig->setEnabled(enabled);
+    m_btnSeitennamen->setEnabled(enabled);
     m_chkIncludeBmk->setEnabled(enabled);
     m_chkIncludeBas->setEnabled(enabled);
     m_chkIncludeLl->setEnabled(enabled);
@@ -1396,6 +1421,18 @@ void OpenCirtTab::onBasKonfigurieren() {
     log(QString("BAS.csv gespeichert: %1 Segmente, Aufbau: %2")
         .arg(segs.size()).arg(OcEngine::basLayoutText(segs)));
     log("Datei: " + basPath + " (bisherige Fassung als BAS.csv.bak)");
+}
+
+void OpenCirtTab::onSeitennamenKonfigurieren() {
+    if (m_projectRoot.isEmpty()) return;
+    const QString pfad = referencePath(OpenCirtConfig::SEITENNAMEN_CSV);
+    SeitennamenConfigDialog dlg(pfad, this);
+    log("Seitennamen konfigurieren: " + dlg.status().replace('\n', ' '));
+    if (dlg.exec() != QDialog::Accepted) return;
+    const QVector<OcSeitennamenSegment> segs = dlg.segments();
+    log(QString("Seitennamen.csv gespeichert: %1 Segmente, Aufbau: Nummer + %2")
+        .arg(segs.size()).arg(OcEngine::seitennamenZeile(segs)));
+    log("Datei: " + pfad);
 }
 
 QString OpenCirtTab::projectExtractDir(const QString& purpose) const {
@@ -3307,6 +3344,13 @@ void OpenCirtTab::createDeckblaetter(RunCounts& counts) {
                        if (!plankopfPairs.isEmpty()) {
                            dwg.setAttributes(plankopfPairs);
                        }
+                       // Zeichnungsnummer wie auf dem Blatt: "Deckblatt <Name>" -
+                       // bewusst zuletzt, damit dieser Wert gewinnt, falls die
+                       // plankopfdaten.csv selbst ZEICHNUNGSNUMMER fuehrt
+                       OcPairs nummer;
+                       nummer << qMakePair(QStringLiteral("ZEICHNUNGSNUMMER"),
+                                           QStringLiteral("Deckblatt %1").arg(displayName));
+                       dwg.setAttributes(nummer);
                    })) {
             ++counts.deckblaetter;
         }
@@ -5152,6 +5196,110 @@ static QString readZeichnungsnummer(const QString& dwgPath)
 }
 
 /**
+ * @brief Read several Plankopf attributes in one pass via side-database.
+ *
+ * Vorgehen wie readZeichnungsnummer: DWG schreibgeschuetzt als Side-Database
+ * oeffnen, im ModelSpace den Block finden, dessen Name mit
+ * "OC_RSH_Plankopf_quer" beginnt (Versionsendung gleichgueltig), und dort
+ * die Werte aller gesuchten Tags sammeln.
+ *
+ * @param dwgPath Full path to the DWG file
+ * @param tags    Tags, die gelesen werden sollen (Groess-/Kleinschreibung egal)
+ * @return Map: Tag (Grossbuchstaben) -> Wert; leer, wenn nichts lesbar ist
+ */
+static QMap<QString, QString> readPlankopfAttribute(const QString& dwgPath,
+                                                    const QStringList& tags)
+{
+    QMap<QString, QString> ergebnis;
+
+    AcDbDatabase* pDb = new AcDbDatabase(false, false);
+    std::wstring wpath = dwgPath.toStdWString();
+
+    Acad::ErrorStatus es = pDb->readDwgFile(
+        wpath.c_str(), AcDbDatabase::kForReadAndAllShare, false);
+    if (es != Acad::eOk) {
+        delete pDb;
+        return ergebnis;
+    }
+
+    AcDbBlockTable* pBT = nullptr;
+    es = pDb->getBlockTable(pBT, AcDb::kForRead);
+    if (es != Acad::eOk || !pBT) {
+        delete pDb;
+        return ergebnis;
+    }
+
+    AcDbBlockTableRecord* pMS = nullptr;
+    es = pBT->getAt(ACDB_MODEL_SPACE, pMS, AcDb::kForRead);
+    pBT->close();
+    if (es != Acad::eOk || !pMS) {
+        delete pDb;
+        return ergebnis;
+    }
+
+    AcDbBlockTableRecordIterator* pIter = nullptr;
+    pMS->newIterator(pIter);
+
+    while (pIter && !pIter->done()) {
+        AcDbEntity* pEnt = nullptr;
+        if (pIter->getEntity(pEnt, AcDb::kForRead) == Acad::eOk && pEnt) {
+            AcDbBlockReference* pRef = AcDbBlockReference::cast(pEnt);
+            if (pRef) {
+                AcDbObjectId blockId = pRef->blockTableRecord();
+                AcDbBlockTableRecord* pBlkRec = nullptr;
+                if (acdbOpenObject(pBlkRec, blockId, AcDb::kForRead) == Acad::eOk && pBlkRec) {
+                    const ACHAR* blkName = nullptr;
+                    pBlkRec->getName(blkName);
+                    QString qBlkName = blkName ? QString::fromWCharArray(blkName) : QString();
+                    pBlkRec->close();
+
+                    // Plankopf-Block erkennen (Versionsendung gleichgueltig)
+                    if (qBlkName.startsWith(QStringLiteral("OC_RSH_Plankopf_quer"),
+                                            Qt::CaseInsensitive)) {
+                        AcDbObjectIterator* pAttIter = pRef->attributeIterator();
+                        while (pAttIter && !pAttIter->done()) {
+                            AcDbObject* pAttObj = nullptr;
+                            if (acdbOpenObject(pAttObj, pAttIter->objectId(), AcDb::kForRead)
+                                == Acad::eOk && pAttObj) {
+                                AcDbAttribute* pAtt = AcDbAttribute::cast(pAttObj);
+                                if (pAtt) {
+                                    const ACHAR* tag = pAtt->tag();
+                                    const ACHAR* val = pAtt->textString();
+                                    if (tag && val) {
+                                        const QString qTag = QString::fromWCharArray(tag);
+                                        for (const QString& gesucht : tags) {
+                                            if (qTag.compare(gesucht, Qt::CaseInsensitive) == 0) {
+                                                ergebnis.insert(
+                                                    qTag.toUpper(),
+                                                    QString::fromWCharArray(val).trimmed());
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                pAttObj->close();
+                            }
+                            pAttIter->step();
+                        }
+                        delete pAttIter;
+
+                        // Plankopf-Block gefunden, nicht weitersuchen
+                        break;
+                    }
+                }
+            }
+            pEnt->close();
+        }
+        pIter->step();
+    }
+    delete pIter;
+    pMS->close();
+    delete pDb;
+
+    return ergebnis;
+}
+
+/**
  * @brief Generate a DSD (Drawing Set Description) file for PUBLISH command.
  *
  * DSD is a Windows INI-style format:
@@ -5185,6 +5333,29 @@ QString OpenCirtTab::generateDsdFile(const QStringList& orderedDwgs,
     dsd += "[DWF6MinorVersion]\n";
     dsd += "MinorVer=1\n";
     
+    // Blattnamen-Konfiguration aus 01- Referenzen/Seitennamen.csv. Fehlt sie
+    // oder ist sie leer, gilt der bisherige Aufbau: Nummer + "-" +
+    // (Zeichnungsnummer, sonst Dateiname).
+    QVector<OcSeitennamenSegment> snSegs;
+    {
+        bool gefunden = false;
+        snSegs = OcEngine::parseSeitennamenCsv(
+            referencePath(OpenCirtConfig::SEITENNAMEN_CSV), &gefunden);
+        if (!gefunden || snSegs.isEmpty()) {
+            log(QString("Seitennamen-Konfiguration %1 - Blattname wie bisher: Nummer-<Zeichnungsnummer, sonst Dateiname>")
+                .arg(gefunden ? QStringLiteral("ist leer") : QStringLiteral("fehlt")));
+        } else {
+            log(QString("Blattnamen aus Seitennamen.csv: Nummer + %1")
+                .arg(OcEngine::seitennamenZeile(snSegs)));
+        }
+    }
+    QStringList snTags;
+    for (const OcSeitennamenSegment& s : snSegs) {
+        if (s.type == OcSeitennamenSegment::Attr && !snTags.contains(s.value)) {
+            snTags << s.value;
+        }
+    }
+
     int sheetIdx = 0;
     for (const QString& dwgPath : orderedDwgs) {
         QString fileName = QFileInfo(dwgPath).completeBaseName();
@@ -5193,15 +5364,22 @@ QString OpenCirtTab::generateDsdFile(const QStringList& orderedDwgs,
         // Read actual layout name from DWG (e.g. "DIN-A2", "DIN-A1")
         QString layoutName = getFirstPaperSpaceLayoutName(dwgPath);
         
-        // Read ZEICHNUNGSNUMMER attribute from ModelSpace Plankopf block
-        // Use as bookmark title if available, fallback to filename
-        QString zeichnungsNr = readZeichnungsnummer(dwgPath);
-        QString displayName = zeichnungsNr.isEmpty() ? fileName : zeichnungsNr;
+        // Titel des Lesezeichens: mit Konfiguration aus deren Segmenten,
+        // sonst wie bisher die Zeichnungsnummer mit Fallback Dateiname
+        QString displayName;
+        if (snSegs.isEmpty()) {
+            QString zeichnungsNr = readZeichnungsnummer(dwgPath);
+            displayName = QStringLiteral("-") + (zeichnungsNr.isEmpty() ? fileName : zeichnungsNr);
+        } else {
+            const QMap<QString, QString> attrs = readPlankopfAttribute(dwgPath, snTags);
+            displayName = OcEngine::seitennamenTitel(snSegs, attrs);
+        }
         
         // Sheet name: 4-digit sequential number + display name
         // Guarantees uniqueness in DSD (INI format: duplicate sections overwrite!)
         // Also serves as readable bookmark title in the PDF table of contents
-        QString sheetName = QString("%1-%2")
+        // (der Trenner gehoert bei konfigurierter Seite zum Titel)
+        QString sheetName = QString("%1%2")
             .arg(sheetIdx + 1, 4, 10, QChar('0'))
             .arg(displayName);
         

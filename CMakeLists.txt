@@ -264,6 +264,7 @@ set(PLUGIN_SOURCES
     src/ui/OpenCirtWindow.cpp
     src/ui/OpenCirtTab.cpp
     src/ui/BasConfigDialog.cpp
+    src/ui/SeitennamenConfigDialog.cpp
     src/ui/Theming.cpp
     src/utils/SensorKeywordLoader.cpp
     src/utils/CsvListWriter.cpp
@@ -278,6 +279,7 @@ set(PLUGIN_HEADERS
     src/ui/OpenCirtWindow.h
     src/ui/OpenCirtTab.h
     src/ui/BasConfigDialog.h
+    src/ui/SeitennamenConfigDialog.h
     src/ui/Theming.h
     src/utils/SensorKeywordLoader.h
     src/utils/CsvListWriter.h

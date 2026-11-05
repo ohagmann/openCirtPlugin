@@ -706,6 +706,144 @@ bool writeBasCsv(const QString& path, const QVector<OcBasSegment>& segments, QSt
     return true;
 }
 
+// ----------------------------------------------------------------------------
+// Blattnamen (Seitennamen.csv)
+// ----------------------------------------------------------------------------
+
+/// Liest die Seitennamen-Konfiguration (01- Referenzen/Seitennamen.csv).
+/// Nur Zeile 1 ist die Konfiguration, was darunter steht, ist die freie
+/// Anleitung des Anwenders und wird ignoriert. Zeile 1 ist wie die BAS.csv
+/// eine Folge von Zellen, getrennt durch Semikolon: eine Zelle, die in
+/// Anfuehrungszeichen steht, ist woertlicher Text (Leerzeichen darin bleiben
+/// erhalten); eine Zelle ohne Anfuehrungszeichen ist der Name eines
+/// Plankopf-Attributs (gross gespeichert). Es wird nirgends getrimmt.
+/// ok = false, wenn die Datei nicht lesbar ist; fehlt oder leer ist sie,
+/// kommt ein leerer Vektor zurueck.
+QVector<OcSeitennamenSegment> parseSeitennamenCsv(const QString& path, bool* ok)
+{
+    QVector<OcSeitennamenSegment> segs;
+    bool readOk = false;
+    const QStringList lines = readLines(path, &readOk);
+    if (ok) *ok = readOk;
+    if (!readOk || lines.isEmpty()) return segs;
+
+    // In Zellen teilen; das Semikolon trennt nur ausserhalb der
+    // Anfuehrungszeichen.Der Zaehler kippt bei jedem Anfuehrungszeichen:
+    // bei den drei Ebenen des Writers ("""Text""") liegt der Inhalt immer
+    // innerhalb und das Trennzeichen zwischen zwei Zellen immer ausserhalb.
+    const QString& zeile = lines.at(0);
+    QStringList zellen;
+    bool innerhalb = false;
+    QString zelle;
+    for (const QChar c : zeile) {
+        if (c == QLatin1Char('"')) {
+            innerhalb = !innerhalb;
+            zelle += c;
+        } else if (c == QLatin1Char(';') && !innerhalb) {
+            zellen << zelle;
+            zelle.clear();
+        } else {
+            zelle += c;
+        }
+    }
+    zellen << zelle;
+
+    for (const QString& roh : zellen) {
+        if (roh.isEmpty()) continue;   // leere Zelle (z. B. am Zeilenende)
+        auto quoted = [](const QString& s) {
+            return s.size() >= 2 && s.startsWith(QLatin1Char('"')) &&
+                   s.endsWith(QLatin1Char('"'));
+        };
+        OcSeitennamenSegment seg;
+        if (quoted(roh)) {
+            // woertlich: jede Ebenen wird abgezogen; nichts wird zurueck
+            // verdoppelt, denn der Writer schreibt nie ein Anfuehrungszeichen
+            // im Text (der Dialog verbietet es)
+            QString text = roh;
+            while (text.size() >= 2 && text.startsWith(QLatin1Char('"')) &&
+                   text.endsWith(QLatin1Char('"'))) {
+                text = text.mid(1, text.size() - 2);
+            }
+            seg.type = OcSeitennamenSegment::Text;
+            seg.value = text;          // Leerzeichen bleiben stehen
+        } else {
+            seg.type = OcSeitennamenSegment::Attr;
+            seg.value = lispUpper(roh); // tolerant gelesen, gross gespeichert
+        }
+        segs.append(seg);
+    }
+    return segs;
+}
+
+/// Setzt die Segmente als Konfigurationszeile zusammen: Text-Zelle in drei
+/// Anfuehrungszeichen-Ebenen ("""Text"""), Attribut-Zelle nackig; die Zellen
+/// trennt ein Semikolon. Leerzeichen innerhalb einer Zelle bleiben erhalten.
+QString seitennamenZeile(const QVector<OcSeitennamenSegment>& segments)
+{
+    QStringList zellen;
+    for (const OcSeitennamenSegment& s : segments) {
+        if (s.type == OcSeitennamenSegment::Text) {
+            zellen << (QStringLiteral("\"\"\"") + s.value + QStringLiteral("\"\"\""));
+        } else {
+            zellen << s.value;
+        }
+    }
+    return zellen.join(QLatin1Char(';'));
+}
+
+/// Schreibt die Seitennamen-Konfiguration, UTF-8: Zeile 1 wird durch
+/// seitennamenZeile ersetzt; was in der Datei schon unterhalb von Zeile 1
+/// stand (die freie Anleitung des Anwenders), bleibt Zeile fuer Zeile
+/// unveraendert erhalten. Eine vorhandene Datei wird ohne .bak ueberschrieben
+/// (Absprache mit dem Anwender, 2026-11-05).
+bool writeSeitennamenCsv(const QString& path, const QVector<OcSeitennamenSegment>& segments,
+                         QString* error)
+{
+    // Stand unterhalb von Zeile 1 behalten (falls die Datei lesbar war)
+    QString rest;
+    bool readOk = false;
+    const QStringList lines = readLines(path, &readOk);
+    if (readOk && lines.size() > 1) {
+        rest = QStringList(lines.cbegin() + 1, lines.cend()).join(QLatin1Char('\n')) +
+               QLatin1Char('\n');
+    }
+    const QString text = seitennamenZeile(segments) + QLatin1Char('\n') + rest;
+
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        if (error) *error = f.errorString();
+        return false;
+    }
+    const QByteArray bytes = text.toUtf8();
+    if (f.write(bytes) != bytes.size()) {
+        if (error) *error = f.errorString();
+        return false;
+    }
+    f.close();
+    return true;
+}
+
+QString seitennamenTitel(const QVector<OcSeitennamenSegment>& segments,
+                         const QMap<QString, QString>& attribute)
+{
+    QString titel;
+    for (const OcSeitennamenSegment& s : segments) {
+        if (s.type == OcSeitennamenSegment::Text) {
+            titel += s.value;
+            continue;
+        }
+        QString wert = attribute.value(lispUpper(s.value)).trimmed();
+        // Problemzeichen des INI-artigen DSD: ; und [ ] sowie Zeilenumbrueche
+        wert.replace(QLatin1Char(';'), QLatin1Char(' '));
+        wert.replace(QLatin1Char('['), QLatin1Char(' '));
+        wert.replace(QLatin1Char(']'), QLatin1Char(' '));
+        wert.replace(QLatin1Char('\r'), QLatin1Char(' '));
+        wert.replace(QLatin1Char('\n'), QLatin1Char(' '));
+        if (!wert.isEmpty()) titel += wert;
+    }
+    return titel;
+}
+
 } // namespace OcEngine
 
 // ============================================================================

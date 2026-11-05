@@ -107,6 +107,7 @@ struct OpenCirtConfig {
     
     // Fixed filenames
     static constexpr const char* BAS_CSV = "BAS.csv";
+    static constexpr const char* SEITENNAMEN_CSV = "Seitennamen.csv";
     static constexpr const char* GA_FL_VORLAGE_ODS = "GA_FL_VORLAGE.ods";
     static constexpr const char* GA_FL_VORLAGE_DWG = "OC_VORLAGE_GA_FL.dwg";
     static constexpr const char* CONFIG_FILE = "opencirt_config.json";
@@ -178,6 +179,10 @@ private slots:
 
     /// Dialog "BAS konfigurieren": Aufbau des BAS bearbeiten, BAS.csv schreiben
     void onBasKonfigurieren();
+
+    /// Dialog "Seitennamen konfigurieren": Titel der PDF-Lesezeichen bearbeiten,
+    /// Seitennamen.csv schreiben
+    void onSeitennamenKonfigurieren();
 
 private:
     void setupUi();
@@ -505,6 +510,7 @@ private:
     QPushButton* m_btnTestdaten = nullptr;   ///< "Export Testdaten"
     QPushButton* m_btnBereinigen;
     QPushButton* m_btnBasConfig = nullptr;   ///< "BAS konfigurieren"
+    QPushButton* m_btnSeitennamen = nullptr; ///< "Seitennamen konfigurieren" (Lesezeichen)
     
     QCheckBox* m_chkIncludeBmk;
     QCheckBox* m_chkIncludeBas;

@@ -493,6 +493,16 @@ Nach dem Inhaltsverzeichnis wird automatisch ein Multi-Sheet-PDF erzeugt, an dem
 
 Auf **„PDF publizieren"** klicken. Der Dialog zeigt die Zahl der Blätter und fragt **Speicherort** (mit „Durchsuchen…", die Auswahl beginnt im `06- Plot` des Projekts) und **Dateiname** ab. Beide Felder sind jedes Mal leer, openCirt merkt sich nichts; ohne Endung wird `.pdf` ergänzt. Unter den Feldern stehen die PDF, die schon im gewählten Speicherort liegen, die neueste oben. Ein Klick auf eine Zeile übernimmt deren Namen (ohne Endung) ins Feld **Dateiname**, wo er sich weiter ändern lässt, etwa für einen neuen Index. Tippen im Feld **Dateiname** filtert die Liste auf die Dateien, deren Name die Eingabe enthält (Groß-/Kleinschreibung egal). Gibt es die Datei schon, fragt openCirt, ob sie ersetzt werden soll („Nein" führt zurück in den Dialog). Nach „OK" werden Inhaltsverzeichnis und PDF nacheinander erzeugt. Das Inhaltsverzeichnis entsteht ohne Bildaufbau; für das PDF startet eine zweite BricsCAD-Instanz, die die Blätter ohne weitere Rückfrage in die gewählte Datei plottet und sich danach beendet. Eine Meldung nennt am Ende die fertige Datei.
 
+### 10.4 Titel der Lesezeichen (Seitennamen, seit 2.4.0)
+
+Jedes Lesezeichen des PDFs beginnt mit der **festen 4-stelligen Seitennummer**; was danach kommt, steht in `01- Referenzen/Seitennamen.csv`. Nur **Zeile 1** dieser Datei ist die Konfiguration: eine Folge von Zellen, getrennt durch `;` – genau eine Zelle je Eintrag im Dialog. Eine Zelle **in Anführungszeichen** ist wörtlicher Text und bleibt inklusive Leerzeichen erhalten; eine Zelle **ohne** Anführungszeichen ist ein Plankopf-Attribut (z. B. `ZEICHNUNGSNUMMER`, `ASP`, `GEWERK`, `ANLAGE`) und wird durch seinen Wert aus der jeweiligen Zeichnung ersetzt; ohne Wert fällt das Segment weg. Alles unterhalb von Zeile 1 ist freie Notiz des Bearbeiters und wird ignoriert. Beispiel: `"""-""";ZEICHNUNGSNUMMER;ASP;GEWERK;ANLAGE`.
+
+Der Trenner zwischen Nummer und Titel ist ein **Text-Segment** in der Konfiguration – deshalb ergibt die Standardkonfiguration denselben Titel wie früher. **Fehlt die Datei, gilt der bisherige Aufbau** (Nummer + `-` + Zeichnungsnummer, sonst Dateiname).
+
+**Knopf „Seitennamen konfigurieren"** (rechts neben der Beschreibung von „PDF publizieren", seit 2.4.0): Tabelle aller Segmente mit Art (Text / Attribut) und Wert; Zeilen anfügen („+ Text", „+ Attribut"), entfernen und mit „vor"/„zurück" verschieben; die Vorschau zeigt live die Konfigurationszeile. „Speichern" **überschreibt Zeile 1** – ohne `.bak`, alles darunter und darüber bleibt, wie es ist; Text darf keine Anführungszeichen enthalten, Attributnamen kein Leerzeichen, kein Semikolon und kein Anführungszeichen (der Dialog prüft und meldet es). Eine Seitennamen.csv legt openCirt nur an, wenn sie noch nicht existiert (dann mit dem üblichen Aufbau). Anders als bei der BAS.csv steht der Datei-Rohwert des Textes in drei Ebenen (`"""Text"""`) – das übersteht auch Öffnen und Speichern in Calc, ohne dass irgendetwas aus den Zellen verschwindet.
+
+**Deckblätter und andere Projektblätter ohne eigene Zeichnungsnummer** bekommen sie beim Erzeugen ins Plankopf geschrieben: die Deckblatt-Deckblätter `Deckblatt <Name>` (z. B. „Deckblatt ASP01"), die Summen- und Übersichtsseiten genauso nach ihrem Titel („Projekt Summe", „Los 01 Summe Gewerke GA-FL 1", „Inhaltsverzeichnis Seite 3 von 10"). In der Konfiguration genügt dann das Segment `ZEICHNUNGSNUMMER`, um im Lesezeichen etwas Sinnvolles zu zeigen.
+
 ---
 
 ## 11. Gesamtprojekt erstellen
@@ -501,7 +511,7 @@ Die Funktion **„Projekt erstellen"** führt alle Schritte in der korrekten Rei
 
 1. Projektstruktur bereinigen (alte GA-FLs, Summenblätter, Deckblätter, Inhaltsverzeichnisse löschen)
 2. Plankopf-Daten setzen (aus CSV, einschließlich der Projektblätter auf der obersten Ebene)
-3. Deckblätter erstellen
+3. Deckblätter erstellen (setzen dabei auch deren Zeichnungsnummer, z. B. „Deckblatt ASP01", siehe 10.4)
 4. ASP, Gewerk und Anlage aus dem Ordnerpfad in den Plankopf schreiben
 5. BMK-Nummerierung (optional, per Checkbox)
 6. BAS-Generierung (optional, per Checkbox)

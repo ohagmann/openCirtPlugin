@@ -5,6 +5,19 @@ Alle wesentlichen Änderungen am openCirt-Plugin werden in dieser Datei dokument
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei reinen Änderungen an Vorlagen, LISP-Skripten, Dokumentation oder Repo-Konfiguration.
 
+## [2.4.0] - 2026-11-05
+
+### Added
+- **Lesezeichen-Titel konfigurierbar (Seitennamen).** Der Titel jedes PDF-Lesezeichens war hart verdrahtet: 4-stellige Nummer + "-" + Zeichnungsnummer (Fallback Dateiname). Jetzt setzt openCirt den Titel aus einer Segmentfolge zusammen, die im neuen Dialog **„Seitennamen konfigurieren"** (Knopf neben „PDF publizieren") bearbeitet wird: Segmente der Art **Text** (woertlich, z. B. das Trennzeichen `-`) und **Attribut** (Wert aus dem Plankopf der jeweiligen Zeichnung, z. B. `ZEICHNUNGSNUMMER`, `ASP`, `GEWERK`, `KOSTENGRUPPE`, `LPH`, `BEMERKUNG`, `ORTSKENNZEICHEN`, `SCHALTSCHRANK`, `FREITEXT_01` …). Zeilen lassen sich anfügen, entfernen und mit „vor"/„zurück" verschieben; die Vorschau zeigt die Konfigurationszeile. Die feste 4-stellige Nummer bleibt Pflicht vorangestellt; der Trenner (z. B. `-`) steht als Text-Segment in der Konfiguration.
+- Datei: `01- Referenzen/Seitennamen.csv`, UTF-8. **Nur Zeile 1 ist die Konfiguration** – eine Folge von Zellen, getrennt durch Semikolon; jede Zeile des Dialogs ist genau eine Zelle davon. Eine Zelle **in Anfuehrungszeichen** ist woertlicher Text (die Datei-Form steht in drei Ebenen `"""text"""`, damit bleibt der Inhalt auch beim Oeffnen und Speichern in Calc erhalten; Leerzeichen im Text bleiben erhalten); eine Zelle **ohne** Anfuehrungszeichen ist direkt der Plankopf-Attributnamen (gross gespeichert, tolerant gelesen) – eine zusaetzliche Kennzeichnung wie `$…$` gibt es nicht. Leer im Plankopf → das Segment faellt weg; das Geschriebene unterhalb von Zeile 1 (das eigene Wissen des Anwenders) bleibt unveraendert stehen und wird ignoriert. Speichern ersetzt **nur Zeile 1** – die Zeilen 2 und darueber bleiben Wort fuer Wort erhalten; ohne `.bak`. Die Datei wird nur angelegt, wenn sie noch nicht existiert.
+- **Fehlt die Datei, gilt exakt das bisherige Verhalten** (Nummer + "-" + Zeichnungsnummer, sonst Dateiname) – volle Rueckwaertskompatibilitaet zu allen bestehenden Projekten.
+
+### Hinweise
+- **Deckblätter bekommen jetzt selbst die Zeichnungsnummer.** Wie die Inhaltsverzeichnis- und die Leistungsliste-Blätter schreibt der Deckblatt-Lauf jetzt auch das Plankopf-Attribut `ZEICHNUNGSNUMMER` – mit dem Text, der auf dem Blatt steht: `Deckblatt <Name der Ebene>` (z. B. „Deckblatt ASP01“). Bisher hatten Deckblätter gar keine Zeichnungsnummer; das Lesezeichen zeigte deshalb nur die Nummer mit den leeren Segmenten.
+- Das Inhaltsverzeichnis bleibt unveraendert strukturiert (jede Spalte ein eigenes Attribut); die Konfiguration gilt nur fuer die DSD-Blattnamen und damit die Lesezeichen.
+- Hyperlink-Ziele von den Inhaltsseiten bleiben unveraendert.
+- Noch nicht gebaut/getestet (Stand beim Anlegen dieses Eintrags).
+
 ## [2.3.1] - 2026-11-03
 
 ### Changed

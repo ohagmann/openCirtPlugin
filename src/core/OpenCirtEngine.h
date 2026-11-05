@@ -31,6 +31,7 @@
 #include <QStringList>
 #include <QVector>
 #include <QPair>
+#include <QMap>
 #include <QFile>
 #include <memory>
 
@@ -69,6 +70,13 @@ struct OcBasSegment {
     enum Type { Static, Attr, AttrDp };
     Type type = Static;
     QString value;   ///< Text bzw. Attributname
+};
+
+/// Segment der Blattname-Konfiguration (Seitennamen.csv, Zeile 1)
+struct OcSeitennamenSegment {
+    enum Type { Text, Attr };
+    Type type = Text;
+    QString value;   ///< woertlicher Text oder Attribut-Tag (in Grossbuchstaben)
 };
 
 struct OcBmkResult {
@@ -235,6 +243,33 @@ QString basLayoutText(const QVector<OcBasSegment>& segments);
 /// als BAS.csv.bak gesichert.
 bool writeBasCsv(const QString& path, const QVector<OcBasSegment>& segments,
                  QString* error = nullptr);
+
+/// Liest die Seitennamen-Konfiguration (01- Referenzen/Seitennamen.csv):
+/// nur Zeile 1 ist die Konfiguration, was darunter steht, ist die freie
+/// Anleitung des Anwenders. Zeile 1 ist eine Folge von Zellen, getrennt
+/// durch Semikolon: eine Zelle in Anfuehrungszeichen ist woertlicher Text
+/// (Leerzeichen bleiben erhalten), eine ohne ist ein Attribut-Name (gross
+/// gespeichert). Es wird nirgends getrimmt. ok = false, wenn die Datei
+/// nicht lesbar ist; leerer Vektor bei fehlender oder leerer Datei.
+QVector<OcSeitennamenSegment> parseSeitennamenCsv(const QString& path, bool* ok = nullptr);
+
+/// Setzt die Segmente als Konfigurationszeile zusammen, genau so wie
+/// parseSeitennamenCsv sie liesst: Text-Zelle """Text""" (drei Ebenen),
+/// Attribut-Zelle nackig; die Zellen trennt ein Semikolon.
+QString seitennamenZeile(const QVector<OcSeitennamenSegment>& segments);
+
+/// Schreibt die Seitennamen-Konfiguration (UTF-8): ersetzt Zeile 1 durch
+/// seitennamenZeile; was darunter stand (die freie Anleitung des Anwenders),
+/// bleibt unveraendert erhalten. Ohne .bak.
+bool writeSeitennamenCsv(const QString& path, const QVector<OcSeitennamenSegment>& segments,
+                         QString* error = nullptr);
+
+/// Titel aus den Segmenten: Text woertlich, Attribut mit seinem Wert aus der
+/// Map; fehlt der Wert oder ist leer, faellt das Segment weg. Semikolon und
+/// eckige Klammern im Wert (Problemzeichen des INI-artigen DSD) werden zu
+/// Leerzeichen, damit der Sektionsname erhalten bleibt.
+QString seitennamenTitel(const QVector<OcSeitennamenSegment>& segments,
+                         const QMap<QString, QString>& attribute);
 
 /// Neuen Lauf beginnen: jede Zeichnung bekommt beim ersten Speichern wieder
 /// eine Sicherungskopie (*.bak). Weitere Speichervorgaenge desselben Laufs
