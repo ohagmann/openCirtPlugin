@@ -829,12 +829,14 @@ bool writeSeitennamenCsv(const QString& path, const QVector<OcSeitennamenSegment
 QString seitennamenTitel(const QVector<OcSeitennamenSegment>& segments,
                          const QMap<QString, QString>& attribute)
 {
-    QString titel;
-    for (const OcSeitennamenSegment& s : segments) {
-        if (s.type == OcSeitennamenSegment::Text) {
-            titel += s.value;
-            continue;
-        }
+    // Werte der Attribut-Segmente; leer = das Segment faellt weg
+    const int n = segments.size();
+    QVector<QString> werte(n);
+    bool mitAttribut = false;
+    for (int i = 0; i < n; ++i) {
+        const OcSeitennamenSegment& s = segments.at(i);
+        if (s.type != OcSeitennamenSegment::Attr) continue;
+        mitAttribut = true;
         QString wert = attribute.value(lispUpper(s.value)).trimmed();
         // Problemzeichen des INI-artigen DSD: ; und [ ] sowie Zeilenumbrueche
         wert.replace(QLatin1Char(';'), QLatin1Char(' '));
@@ -842,7 +844,32 @@ QString seitennamenTitel(const QVector<OcSeitennamenSegment>& segments,
         wert.replace(QLatin1Char(']'), QLatin1Char(' '));
         wert.replace(QLatin1Char('\r'), QLatin1Char(' '));
         wert.replace(QLatin1Char('\n'), QLatin1Char(' '));
-        if (!wert.isEmpty()) titel += wert;
+        werte[i] = wert;
+    }
+
+    // Ein Text gehoert zum naechsten Attribut (Trenner davor), ein Text nach
+    // dem letzten Attribut zum letzten. Ist dieses Attribut leer, faellt der
+    // Text mit weg: aus "0001 -  -  - Titel" wird "0001 - Titel" - vor dem
+    // ersten Wert bleibt genau sein eigener Trenner stehen.
+    QString titel;
+    for (int i = 0; i < n; ++i) {
+        const OcSeitennamenSegment& s = segments.at(i);
+        if (s.type == OcSeitennamenSegment::Attr) {
+            titel += werte[i];
+            continue;
+        }
+        if (!mitAttribut) {          // nur Text konfiguriert: steht immer
+            titel += s.value;
+            continue;
+        }
+        int zugehoerig = -1;
+        for (int k = i + 1; k < n && zugehoerig < 0; ++k) {
+            if (segments.at(k).type == OcSeitennamenSegment::Attr) zugehoerig = k;
+        }
+        for (int k = i - 1; k >= 0 && zugehoerig < 0; --k) {
+            if (segments.at(k).type == OcSeitennamenSegment::Attr) zugehoerig = k;
+        }
+        if (!werte[zugehoerig].isEmpty()) titel += s.value;
     }
     return titel;
 }
@@ -1010,6 +1037,37 @@ struct OcDrawing::Impl {
             pRecord->close();
         }
         for (int i = ids.size() - 1; i >= 0; --i) visit(ids.at(i));
+    }
+
+    /// Objekte der Blockdefinitionen - ohne Layouts, XRefs und abhaengige
+    /// Bloecke. Seit dem Blattrahmen V5 (2026-10-31) steht z. B. der Text
+    /// "DECKBLATT" im Rahmenblock statt lose im Modellbereich.
+    template <typename Visitor>
+    void collectBlockEntities(Visitor visit) const
+    {
+        QVector<AcDbObjectId> ids;
+        AcDbBlockTable* pTable = nullptr;
+        if (db->getBlockTable(pTable, AcDb::kForRead) != Acad::eOk || !pTable) return;
+        AcDbBlockTableIterator* pIter = nullptr;
+        pTable->newIterator(pIter);
+        for (; pIter && !pIter->done(); pIter->step()) {
+            AcDbBlockTableRecord* pRecord = nullptr;
+            if (pIter->getRecord(pRecord, AcDb::kForRead) != Acad::eOk || !pRecord) continue;
+            if (!pRecord->isLayout() && !pRecord->isFromExternalReference()
+                && !pRecord->isDependent()) {
+                AcDbBlockTableRecordIterator* pEntIter = nullptr;
+                pRecord->newIterator(pEntIter);
+                for (; pEntIter && !pEntIter->done(); pEntIter->step()) {
+                    AcDbObjectId id;
+                    if (pEntIter->getEntityId(id) == Acad::eOk) ids.append(id);
+                }
+                delete pEntIter;
+            }
+            pRecord->close();
+        }
+        delete pIter;
+        pTable->close();
+        for (const AcDbObjectId& id : ids) visit(id);
     }
 
     static QString recordName(const AcDbObjectId& recordId)
@@ -1375,7 +1433,7 @@ int OcDrawing::replaceText(const QString& upperSearch, const QString& replacemen
     int count = 0;
     const std::wstring value = replacement.toStdWString();
     AcDbDatabase* db = d->db;
-    d->collectEntities([&](const AcDbObjectId& id) {
+    auto ersetzen = [&](const AcDbObjectId& id) {
         AcDbEntity* pEnt = nullptr;
         if (acdbOpenObject(pEnt, id, AcDb::kForRead) != Acad::eOk || !pEnt) return;
 
@@ -1398,7 +1456,12 @@ int OcDrawing::replaceText(const QString& upperSearch, const QString& replacemen
             }
         }
         pEnt->close();
-    });
+    };
+    d->collectEntities(ersetzen);
+    // Auch in den Blockdefinitionen suchen: Seit dem Blattrahmen V5 steht
+    // "DECKBLATT" im Rahmenblock. Jedes Deckblatt ist eine eigene Kopie der
+    // Vorlage, die Aenderung am Block betrifft also nur dieses Blatt.
+    d->collectBlockEntities(ersetzen);
     return count;
 }
 

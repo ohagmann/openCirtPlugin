@@ -5,6 +5,21 @@ Alle wesentlichen Änderungen am openCirt-Plugin werden in dieser Datei dokument
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei reinen Änderungen an Vorlagen, LISP-Skripten, Dokumentation oder Repo-Konfiguration.
 
+## [2.4.2] - 2026-11-05
+
+### Fixed
+- **Deckblätter zeigen wieder den Namen der Ebene.** Seit dem Blattrahmen V5 in den Vorlagen (31.10.2026) steht der Text „DECKBLATT“ (Layer GA-Deckblatt) im Rahmenblock `OC_VORLAGE_DIN_BLATTRAHMEN_A2_V5` statt lose im Modellbereich. Der Deckblatt-Lauf suchte ihn nur in den Layouts und ersetzte nichts: Auf jedem neu erzeugten Deckblatt stand „DECKBLATT“ statt z. B. „Übersicht“ oder „GA_“. Jetzt sucht er auch in den Blockdefinitionen der Zeichnung (ohne XRefs und abhängige Blöcke). Jedes Deckblatt ist eine eigene Kopie der Vorlage, die Änderung am Rahmenblock betrifft also nur dieses Blatt. Vorlagen mit losem Text gehen wie bisher.
+- Findet der Deckblatt-Lauf den Text „DECKBLATT“ nicht, steht das als Warnung je Deckblatt im Protokoll.
+
+### Changed
+- **Seitennamen: ein leeres Attribut nimmt seinen Trenner mit.** Ein Text-Segment gehört zum Attribut danach, ein Text nach dem letzten Attribut zu diesem; ist das Attribut leer, fällt der Text mit weg. Aus `0001 -  -  -  - Projektdeckblatt` wird `0001 - Projektdeckblatt`, aus `0022 - Übersicht - GA_ -  - Deckblatt GA_` wird `0022 - Übersicht - GA_ - Deckblatt GA_`. Vor dem ersten Wert bleibt so genau ein Trenner stehen. Ist nur Text konfiguriert, steht er immer.
+
+### Geprüft (Linux)
+- Ursache an Kopien nachgewiesen (`dwg2dxf`): In `04- Vorlagen/OC_VORLAGE_DIN_A2_V14.dwg` eines Projekts und im daraus am 05.11. erzeugten Deckblatt liegt der Text „DECKBLATT“ im Block `OC_VORLAGE_DIN_BLATTRAHMEN_A2_V5`, die Zeichnungsnummer „Deckblatt GA_“ steht richtig im Plankopf. Im Plot mit Deckblättern aus der Zeit vor dem Rahmentausch steht in der Mitte „Übersicht“, im Plot mit neu erzeugten Deckblättern „DECKBLATT“.
+- Linux-Build `opencirt-2.4.2-v27.lrx` (BricsCAD V27, Qt 6.10.2), ohne Warnungen aus dem eigenen Code.
+- Logik-Test der Seitennamen (wie bei 2.4.1, jetzt 27 Fälle, alle bestanden), darunter die Konfiguration `""" - """;ASP;""" - """;GEWERK;""" - """;ANLAGE;""" - """;ZEICHNUNGSNUMMER` eines Projekts mit den Werten aus dessen Plot: `0001 - Projektdeckblatt`, `0001 - Übersicht - Deckblatt Übersicht`, `0001 - Übersicht - GA_ - Deckblatt GA_`, `0001 - Übersicht - GA_ - Topologie - GA-Systemtopologie`; alle Attribute leer: `0001 - <Dateiname>`. Klammern um ein leeres Attribut (`-;ZEICHNUNGSNUMMER;" (";ASP;")"`) fallen ganz weg.
+- In BricsCAD noch nicht geprüft (Deckblätter neu erzeugen, PDF publizieren). Kein Windows-Build.
+
 ## [2.4.1] - 2026-11-05
 
 ### Fixed

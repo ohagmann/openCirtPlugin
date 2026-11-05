@@ -42,7 +42,8 @@ SeitennamenConfigDialog::SeitennamenConfigDialog(const QString& dateiPfad, QWidg
         "(in der Datei steht er in Anfuehrungszeichen, Leerzeichen bleiben). "
         "<b>Attribut</b> holt den Wert aus dem Plankopf der jeweiligen Zeichnung "
         "(in der Datei steht der Name ohne Kennzeichnung); fehlt der Wert, faellt "
-        "das Segment weg - nur fuer ZEICHNUNGSNUMMER steht dann wie bisher der Dateiname.",
+        "das Segment samt dem Text davor weg, so bleibt nur ein Trenner stehen - nur fuer "
+        "ZEICHNUNGSNUMMER steht dann wie bisher der Dateiname.",
         this);
     intro->setTextFormat(Qt::RichText);
     intro->setWordWrap(true);

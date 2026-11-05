@@ -3339,7 +3339,13 @@ void OpenCirtTab::createDeckblaetter(RunCounts& counts) {
                        dwg.thawLayer("GA-Deckblatt");
                        dwg.freezeLayers(frozenLayers);
                        // Text "DECKBLATT" durch den Namen der Ebene ersetzen
-                       dwg.replaceText("DECKBLATT", displayName);
+                       // (lose oder im Blattrahmen); fehlt er, faellt eine
+                       // geaenderte Vorlage sonst erst im Plot auf
+                       if (dwg.replaceText("DECKBLATT", displayName) == 0) {
+                           log(QString("Deckblatt %1: Text \"DECKBLATT\" nicht gefunden - "
+                                       "Name der Ebene steht nicht auf dem Blatt")
+                               .arg(targetName), "WARN");
+                       }
                        dwg.setAttributes(hierarchiePairs(aspValue, gewerkValue, anlageValue));
                        if (!plankopfPairs.isEmpty()) {
                            dwg.setAttributes(plankopfPairs);

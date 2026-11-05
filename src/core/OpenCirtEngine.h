@@ -269,7 +269,9 @@ bool writeSeitennamenCsv(const QString& path, const QVector<OcSeitennamenSegment
                          QString* error = nullptr);
 
 /// Titel aus den Segmenten: Text woertlich, Attribut mit seinem Wert aus der
-/// Map; fehlt der Wert oder ist leer, faellt das Segment weg. Semikolon und
+/// Map; fehlt der Wert oder ist leer, faellt das Segment weg - samt dem Text
+/// davor (Trenner); Text nach dem letzten Attribut gehoert zu diesem. So
+/// bleibt bei leeren Attributen nur ein Trenner stehen. Semikolon und
 /// eckige Klammern im Wert (Problemzeichen des INI-artigen DSD) werden zu
 /// Leerzeichen, damit der Sektionsname erhalten bleibt.
 QString seitennamenTitel(const QVector<OcSeitennamenSegment>& segments,
@@ -349,7 +351,8 @@ public:
     void freezeLayers(const QStringList& names);
 
     /// TEXT und MTEXT, deren Inhalt (ohne Beachtung der Schreibweise) dem
-    /// Suchtext entspricht, ersetzen. Rueckgabe: Anzahl.
+    /// Suchtext entspricht, ersetzen - in den Layouts und in den
+    /// Blockdefinitionen (ohne XRefs), z. B. im Blattrahmen. Rueckgabe: Anzahl.
     int replaceText(const QString& upperSearch, const QString& replacement);
 
     // ------------------------------------------------------------------
