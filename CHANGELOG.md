@@ -18,7 +18,8 @@ Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei re
 - Ursache an Kopien nachgewiesen (`dwg2dxf`): In `04- Vorlagen/OC_VORLAGE_DIN_A2_V14.dwg` eines Projekts und im daraus am 05.11. erzeugten Deckblatt liegt der Text „DECKBLATT“ im Block `OC_VORLAGE_DIN_BLATTRAHMEN_A2_V5`, die Zeichnungsnummer „Deckblatt GA_“ steht richtig im Plankopf. Im Plot mit Deckblättern aus der Zeit vor dem Rahmentausch steht in der Mitte „Übersicht“, im Plot mit neu erzeugten Deckblättern „DECKBLATT“.
 - Linux-Build `opencirt-2.4.2-v27.lrx` (BricsCAD V27, Qt 6.10.2), ohne Warnungen aus dem eigenen Code.
 - Logik-Test der Seitennamen (wie bei 2.4.1, jetzt 27 Fälle, alle bestanden), darunter die Konfiguration `""" - """;ASP;""" - """;GEWERK;""" - """;ANLAGE;""" - """;ZEICHNUNGSNUMMER` eines Projekts mit den Werten aus dessen Plot: `0001 - Projektdeckblatt`, `0001 - Übersicht - Deckblatt Übersicht`, `0001 - Übersicht - GA_ - Deckblatt GA_`, `0001 - Übersicht - GA_ - Topologie - GA-Systemtopologie`; alle Attribute leer: `0001 - <Dateiname>`. Klammern um ein leeres Attribut (`-;ZEICHNUNGSNUMMER;" (";ASP;")"`) fallen ganz weg.
-- In BricsCAD noch nicht geprüft (Deckblätter neu erzeugen, PDF publizieren). Kein Windows-Build.
+- Vom Anwender in BricsCAD V27 an einem laufenden Projekt geprüft: „Projekt erstellen“ und „PDF publizieren“ (464 Seiten). Die Deckblätter zeigen in der Mitte wieder den Namen der Ebene (z. B. „GA_“), die Zeichnungsnummer „Deckblatt GA_“ steht im Plankopf. Lesezeichen mit nur einem Trenner, z. B. `0001 - Projektdeckblatt`, `0021 - Übersicht - Deckblatt Übersicht`, `0024 - Übersicht - GA_ - Topologie - GA-Systemtopologie`.
+- Windows-Build `opencirt-2.4.2-v27.brx` unter Linux erzeugt (`CROSS_BUILD_WINDOWS.sh`), unter Windows noch nicht geladen.
 
 ## [2.4.1] - 2026-11-05
 
@@ -33,7 +34,7 @@ Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei re
 - Linux-Build `opencirt-2.4.1-v27.lrx` (BricsCAD V27, Qt 6.10.2), ohne Warnungen aus dem eigenen Code.
 - Logik-Test der Seitennamen-Funktionen (aus dem Quelltext gezogen, mit Qt 6.10.2 übersetzt), 18 Fälle, alle bestanden: Standardbelegung schreiben und lesen; Titel mit Zeichnungsnummer, ohne und mit leerer Zeichnungsnummer (dann Dateiname, z. B. `-0000 ASP01_Deckblatt`); ein leeres `ASP` fällt weg, der Text „ - “ bleibt mit Leerzeichen; Notizen unter Zeile 1 bleiben beim Speichern zeichengleich; einfach zitierte Attribute werden erkannt und gemeldet, „-“ und „ “ nicht; BOM, CRLF und Semikolon im Text; leere und fehlende Datei.
 - Calc (LibreOffice, ohne Oberfläche): Öffnen und normales Speichern lässt Zeile 1 unverändert (`"""-""";ZEICHNUNGSNUMMER;""" - """;ASP`); mit „Alle Textzellen in Anführungszeichen“ wird daraus `"""-""";"ZEICHNUNGSNUMMER";""" - """;"ASP"` – genau der Fall, den 2.4.1 meldet.
-- In BricsCAD noch nicht geprüft (Plankopf lesen, PDF publizieren mit und ohne `Seitennamen.csv`). Kein Windows-Build.
+- Vom Anwender in BricsCAD V27 an einem laufenden Projekt mit „Projekt erstellen“ und „PDF publizieren“ (464 Seiten) eingesetzt: Lesezeichen nach der `Seitennamen.csv`, Deckblätter mit Zeichnungsnummer im Plankopf. Dabei fiel auf, dass neu erzeugte Deckblätter „DECKBLATT“ statt des Namens der Ebene zeigten und leere Attribute ihre Trenner stehen ließen – beides behoben in 2.4.2. Kein Windows-Build für 2.4.1.
 
 ## [2.4.0] - 2026-11-05
 
