@@ -77,6 +77,10 @@ struct OcSeitennamenSegment {
     enum Type { Text, Attr };
     Type type = Text;
     QString value;   ///< woertlicher Text oder Attribut-Tag (in Grossbuchstaben)
+    /// Zelle stand in genau einer Ebene Anfuehrungszeichen ("NAME"). So
+    /// schreibt Calc mit "Alle Textzellen in Anfuehrungszeichen" ein Attribut;
+    /// openCirt selbst schreibt Text immer in drei Ebenen.
+    bool einfachZitiert = false;
 };
 
 struct OcBmkResult {
@@ -270,6 +274,12 @@ bool writeSeitennamenCsv(const QString& path, const QVector<OcSeitennamenSegment
 /// Leerzeichen, damit der Sektionsname erhalten bleibt.
 QString seitennamenTitel(const QVector<OcSeitennamenSegment>& segments,
                          const QMap<QString, QString>& attribute);
+
+/// Text-Segmente, die wie ein Attributname aussehen (Buchstabe, dann
+/// Buchstaben, Ziffern, _) und in genau einer Ebene Anfuehrungszeichen
+/// standen - vermutlich ein Attribut, das Calc beim Speichern mit "Alle
+/// Textzellen in Anfuehrungszeichen" zu Text gemacht hat. Nur zum Melden.
+QStringList seitennamenEinfachZitiert(const QVector<OcSeitennamenSegment>& segments);
 
 /// Neuen Lauf beginnen: jede Zeichnung bekommt beim ersten Speichern wieder
 /// eine Sicherungskopie (*.bak). Weitere Speichervorgaenge desselben Laufs

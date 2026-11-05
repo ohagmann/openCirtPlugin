@@ -760,12 +760,15 @@ QVector<OcSeitennamenSegment> parseSeitennamenCsv(const QString& path, bool* ok)
             // verdoppelt, denn der Writer schreibt nie ein Anfuehrungszeichen
             // im Text (der Dialog verbietet es)
             QString text = roh;
+            int ebenen = 0;
             while (text.size() >= 2 && text.startsWith(QLatin1Char('"')) &&
                    text.endsWith(QLatin1Char('"'))) {
                 text = text.mid(1, text.size() - 2);
+                ++ebenen;
             }
             seg.type = OcSeitennamenSegment::Text;
             seg.value = text;          // Leerzeichen bleiben stehen
+            seg.einfachZitiert = (ebenen == 1);
         } else {
             seg.type = OcSeitennamenSegment::Attr;
             seg.value = lispUpper(roh); // tolerant gelesen, gross gespeichert
@@ -842,6 +845,25 @@ QString seitennamenTitel(const QVector<OcSeitennamenSegment>& segments,
         if (!wert.isEmpty()) titel += wert;
     }
     return titel;
+}
+
+QStringList seitennamenEinfachZitiert(const QVector<OcSeitennamenSegment>& segments)
+{
+    QStringList namen;
+    for (const OcSeitennamenSegment& s : segments) {
+        if (s.type != OcSeitennamenSegment::Text || !s.einfachZitiert || s.value.isEmpty()) {
+            continue;
+        }
+        bool wieName = s.value.at(0).isLetter();
+        for (const QChar c : s.value) {
+            if (!c.isLetterOrNumber() && c != QLatin1Char('_')) {
+                wieName = false;
+                break;
+            }
+        }
+        if (wieName) namen << s.value;
+    }
+    return namen;
 }
 
 } // namespace OcEngine

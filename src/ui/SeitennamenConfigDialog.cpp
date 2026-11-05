@@ -42,7 +42,7 @@ SeitennamenConfigDialog::SeitennamenConfigDialog(const QString& dateiPfad, QWidg
         "(in der Datei steht er in Anfuehrungszeichen, Leerzeichen bleiben). "
         "<b>Attribut</b> holt den Wert aus dem Plankopf der jeweiligen Zeichnung "
         "(in der Datei steht der Name ohne Kennzeichnung); fehlt der Wert, faellt "
-        "das Segment weg.",
+        "das Segment weg - nur fuer ZEICHNUNGSNUMMER steht dann wie bisher der Dateiname.",
         this);
     intro->setTextFormat(Qt::RichText);
     intro->setWordWrap(true);
@@ -142,6 +142,15 @@ SeitennamenConfigDialog::SeitennamenConfigDialog(const QString& dateiPfad, QWidg
     } else {
         m_status = QString("Seitennamen.csv gelesen, %1 Segmente:\n%2")
                        .arg(segs.size()).arg(m_dateiPfad);
+        const QStringList einfach = OcEngine::seitennamenEinfachZitiert(segs);
+        if (!einfach.isEmpty()) {
+            m_status += QString("\n\nAchtung: %1 stand in einfachen Anfuehrungszeichen und gilt "
+                                "als Text, nicht als Attribut (so speichert Calc mit \"Alle "
+                                "Textzellen in Anfuehrungszeichen\"). Ist ein Attribut gemeint, "
+                                "die Art auf Attribut stellen und speichern.")
+                            .arg(einfach.join(QStringLiteral(", ")));
+            melden = true;
+        }
     }
     m_fileLabel->setText(m_status);
     if (melden) {

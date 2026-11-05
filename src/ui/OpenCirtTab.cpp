@@ -5211,6 +5211,7 @@ static QMap<QString, QString> readPlankopfAttribute(const QString& dwgPath,
                                                     const QStringList& tags)
 {
     QMap<QString, QString> ergebnis;
+    bool mitWert = false;   // mindestens ein gesuchtes Attribut hat einen Wert
 
     AcDbDatabase* pDb = new AcDbDatabase(false, false);
     std::wstring wpath = dwgPath.toStdWString();
@@ -5269,9 +5270,10 @@ static QMap<QString, QString> readPlankopfAttribute(const QString& dwgPath,
                                         const QString qTag = QString::fromWCharArray(tag);
                                         for (const QString& gesucht : tags) {
                                             if (qTag.compare(gesucht, Qt::CaseInsensitive) == 0) {
-                                                ergebnis.insert(
-                                                    qTag.toUpper(),
-                                                    QString::fromWCharArray(val).trimmed());
+                                                const QString wert =
+                                                    QString::fromWCharArray(val).trimmed();
+                                                ergebnis.insert(qTag.toUpper(), wert);
+                                                if (!wert.isEmpty()) mitWert = true;
                                                 break;
                                             }
                                         }
@@ -5283,8 +5285,15 @@ static QMap<QString, QString> readPlankopfAttribute(const QString& dwgPath,
                         }
                         delete pAttIter;
 
-                        // Plankopf-Block gefunden, nicht weitersuchen
-                        break;
+                        // Plankopf mit Werten gefunden, nicht weitersuchen -
+                        // wie readZeichnungsnummer: ein leerer Plankopf gilt
+                        // nicht als Fund, und die Entitaet wird vor dem
+                        // Abbruch geschlossen (sonst ist sie beim delete pDb
+                        // noch offen)
+                        if (mitWert) {
+                            pEnt->close();
+                            break;
+                        }
                     }
                 }
             }
@@ -5347,6 +5356,14 @@ QString OpenCirtTab::generateDsdFile(const QStringList& orderedDwgs,
         } else {
             log(QString("Blattnamen aus Seitennamen.csv: Nummer + %1")
                 .arg(OcEngine::seitennamenZeile(snSegs)));
+            const QStringList einfach = OcEngine::seitennamenEinfachZitiert(snSegs);
+            if (!einfach.isEmpty()) {
+                log(QString("Seitennamen.csv: %1 in einfachen Anfuehrungszeichen - gilt als Text, "
+                            "nicht als Attribut (so speichert Calc mit \"Alle Textzellen in "
+                            "Anfuehrungszeichen\"). Ist ein Attribut gemeint: \"Seitennamen "
+                            "konfigurieren\", Art auf Attribut stellen, Speichern.")
+                    .arg(einfach.join(QStringLiteral(", "))), "WARN");
+            }
         }
     }
     QStringList snTags;
@@ -5371,7 +5388,13 @@ QString OpenCirtTab::generateDsdFile(const QStringList& orderedDwgs,
             QString zeichnungsNr = readZeichnungsnummer(dwgPath);
             displayName = QStringLiteral("-") + (zeichnungsNr.isEmpty() ? fileName : zeichnungsNr);
         } else {
-            const QMap<QString, QString> attrs = readPlankopfAttribute(dwgPath, snTags);
+            QMap<QString, QString> attrs = readPlankopfAttribute(dwgPath, snTags);
+            // Ohne Zeichnungsnummer steht wie bisher und wie im
+            // Inhaltsverzeichnis der Dateiname an ihrer Stelle; andere
+            // Attribute fallen ohne Wert weg
+            if (attrs.value(QStringLiteral("ZEICHNUNGSNUMMER")).isEmpty()) {
+                attrs.insert(QStringLiteral("ZEICHNUNGSNUMMER"), fileName);
+            }
             displayName = OcEngine::seitennamenTitel(snSegs, attrs);
         }
         
