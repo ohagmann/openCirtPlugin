@@ -30,6 +30,8 @@
 #include <QMap>
 #include <QFile>
 
+#include <functional>
+
 namespace BatchProcessing {
 
 class ProjectBuilder : public QObject {
@@ -73,6 +75,8 @@ public:
         int warnings = 0;            ///< Fehler/Warnungen insgesamt
         bool aborted = false;        ///< Abbruch wegen fehlendem Stempel
         QString abortMessage;        ///< Text fuer den Dialog
+        bool cancelled = false;      ///< Abbruch durch den Anwender (Knopf)
+        int done = 0;                ///< bis zum Abbruch bearbeitete Zeichnungen
     };
 
     explicit ProjectBuilder(QObject* parent = nullptr);
@@ -99,6 +103,11 @@ public:
 
     /// Anwender hat die Sicherheitsabfrage verneint
     void cancelByUser();
+
+    /// Abfrage, ob der Anwender den laufenden Aufbau abbrechen will. runReal()
+    /// fragt vor jeder Zeichnung; true = anhalten (die bisher erzeugten
+    /// Zeichnungen bleiben, das Log wird abgeschlossen).
+    void setCancelCheck(std::function<bool()> check) { m_cancelCheck = std::move(check); }
 
 signals:
     /// Fortschritt des Aufbaus, current zaehlt ab 1
@@ -164,6 +173,7 @@ private:
     QMap<QString, QString> m_vorlagen;   ///< Name in Grossschreibung -> Pfad
     QVector<PlanEntry> m_plan;
     Preview m_preview;
+    std::function<bool()> m_cancelCheck;
 };
 
 } // namespace BatchProcessing

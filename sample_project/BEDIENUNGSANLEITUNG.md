@@ -535,7 +535,32 @@ Zeichnungen des Projekts dürfen während des Laufs nicht in BricsCAD geöffnet 
 
 ### Ausführung
 
-Auf **„Projekt erstellen"** klicken und die Warnung bestätigen. Der Prozess läuft vollautomatisch; solange er läuft, nimmt das Plugin-Fenster keine Eingaben an. Am Ende nennt eine Meldung Stückzahlen, Fehler und Dauer.
+Auf **„Projekt erstellen"** klicken und die Warnung bestätigen. Der Prozess läuft vollautomatisch; solange er läuft, nimmt das Plugin-Fenster keine Eingaben an – außer dem Knopf **„Abbrechen"** (siehe „Lauf abbrechen"). Am Ende nennt eine Meldung Stückzahlen, Fehler und Dauer.
+
+### Lauf abbrechen (seit 2.5.0)
+
+Während „Projekt erstellen", „Projekt aufbauen", „Sensorliste erstellen" und „PDF publizieren" steht rechts neben dem Fortschrittsbalken der Knopf **„Abbrechen"**. Der Lauf hält nach der Zeichnung an, die gerade bearbeitet wird; diese wird noch fertig gespeichert, keine Zeichnung bleibt halb geschrieben. Das Projekt ist danach unvollständig (z. B. fehlen GA-FL- oder Summenblätter, bzw. `05- Projekt Zeichnungen` ist nur teilweise neu aufgebaut) – den Lauf später neu starten. Eine Meldung und das Protokoll nennen den Stand.
+
+Bei „PDF publizieren" bricht der Knopf das Inhaltsverzeichnis und das Lesen der Lesezeichen ab; plottet bereits die zweite BricsCAD-Instanz, wird sie beendet, die halb geschriebene PDF und ihre Sperrdateien werden entfernt.
+
+### Aufträge von außen und Laufstatus (seit 2.5.0)
+
+Andere Programme (z. B. ein Assistent, der BricsCAD fernsteuert) können „Projekt erstellen" und „PDF publizieren" als Auftrag starten:
+
+    (opencirt-auftrag "<Pfad der Auftragsdatei>")
+
+Die Auftragsdatei ist JSON, z. B.
+
+    { "aktion": "erstellen", "projekt": "<Projektordner>",
+      "bmk": true, "bas": true, "leistungslisten": false,
+      "fehlende_referenzen": "abbrechen" }
+
+    { "aktion": "pdf", "projekt": "<Projektordner>",
+      "ziel": "<Projektordner>/06- Plot/<Name>.pdf", "ersetzen": false }
+
+openCirt übernimmt Projekt und Haken sichtbar ins Fenster und startet den Lauf wie nach einem Klick. Rückfragen beantwortet der Auftrag (`fehlende_referenzen`, `stempel_ohne_geraet`: `"weiter"` oder `"abbrechen"`, ohne Angabe gilt `abbrechen`); die Optionen und das PDF-Ziel haben keine Vorgabe und müssen genannt werden. Der Aufruf kehrt sofort mit `OK: …` oder `FEHLER: …` zurück; abgelehnt wird, solange ein Lauf läuft oder ein Dialog von openCirt offen ist, wenn Zeichnungen des Projekts geöffnet sind oder die PDF schon existiert und `ersetzen` nicht `true` ist.
+
+Während jedes Laufs – per Knopf oder Auftrag – stehen Stand und Protokoll im Temp-Ordner: `OpenCirt_status.json` (Aktion, Zustand `laeuft`/`fertig`/`fehler`/`abgebrochen`, Abschnitt mit „Schritt von Anzahl", Zähler, Ergebnis) und `OpenCirt_protokoll.txt`. Eine leere Datei `OpenCirt_abbrechen` im Temp-Ordner wirkt wie ein Klick auf „Abbrechen".
 
 ### Export Testdaten
 

@@ -73,7 +73,20 @@
 #include <QSettings>
 #include <QElapsedTimer>
 #include <QCryptographicHash>
+#include <QAbstractNativeEventFilter>
+#include <QAbstractScrollArea>
+#include <QScrollBar>
+#include <QPointer>
+#include <QThread>
 #include <functional>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <cerrno>
+#include <csignal>
+#include <sys/types.h>
+#endif
 
 // BRX result codes
 #ifndef RTNORM
@@ -342,6 +355,17 @@ OpenCirtTab::OpenCirtTab(QWidget* parent)
     connect(m_pdfDoneTimer, &QTimer::timeout, this, &OpenCirtTab::onPdfDonePollTimer);
 }
 
+OpenCirtTab::~OpenCirtTab() {
+    // Fenster wird mitten im Lauf zerstoert (Plugin entladen): Filter abbauen
+    if (m_inputBlocker) qApp->removeEventFilter(m_inputBlocker);
+#ifdef _WIN32
+    if (m_nativeBlocker) {
+        qApp->removeNativeEventFilter(m_nativeBlocker);
+        delete m_nativeBlocker;
+    }
+#endif
+}
+
 void OpenCirtTab::setupUi() {
     auto* mainLayout = new QVBoxLayout(this);
     
@@ -513,11 +537,25 @@ void OpenCirtTab::setupUi() {
 
     mainLayout->addWidget(buttonGroup);
     
-    // --- Progress Bar ---
-    m_progressBar = new QProgressBar();
-    m_progressBar->setVisible(false);
-    m_progressBar->setTextVisible(true);
-    mainLayout->addWidget(m_progressBar);
+    // --- Progress Bar, daneben "Abbrechen" (nur waehrend eines Laufs) ---
+    {
+        auto* progressRow = new QHBoxLayout();
+        m_progressBar = new QProgressBar();
+        m_progressBar->setVisible(false);
+        m_progressBar->setTextVisible(true);
+        m_btnCancel = new QPushButton("Abbrechen");
+        m_btnCancel->setMinimumHeight(32);
+        m_btnCancel->setMinimumWidth(140);
+        m_btnCancel->setVisible(false);
+        m_btnCancel->setToolTip(
+            "Laufenden Lauf nach der aktuellen Zeichnung anhalten.\n"
+            "Die bis dahin bearbeiteten Zeichnungen bleiben gespeichert, das Projekt\n"
+            "ist danach unvollstaendig - den Lauf spaeter neu starten.\n"
+            "Beim PDF publizieren wird die Batch-Instanz beendet, es entsteht keine PDF.");
+        progressRow->addWidget(m_progressBar, 1);
+        progressRow->addWidget(m_btnCancel);
+        mainLayout->addLayout(progressRow);
+    }
     
     // Kein eigener Protokollkasten: alle Meldungen laufen ueber das Signal
     // logMessage in das Protokoll des Fensters (OpenCirtWindow), das unter
@@ -535,9 +573,11 @@ void OpenCirtTab::setupUi() {
     connect(m_btnSeitennamen, &QPushButton::clicked, this, &OpenCirtTab::onSeitennamenKonfigurieren);
     connect(m_btnBereinigen, &QPushButton::clicked, this, &OpenCirtTab::onProjektBereinigen);
     connect(m_btnProjektAufbau, &QPushButton::clicked, this, &OpenCirtTab::onProjektAufbauen);
+    connect(m_btnCancel, &QPushButton::clicked, this, &OpenCirtTab::onCancelClicked);
 }
 
 void OpenCirtTab::onBrowseProject() {
+    HandlerScope scope(this);
     const QString start = m_projectRoot.isEmpty() ? QDir::homePath() : m_projectRoot;
     const QString dir = QFileDialog::getExistingDirectory(this, "Projektordner waehlen", start);
     if (dir.isEmpty()) return;
@@ -628,6 +668,141 @@ QStringList openEditorDrawingsUnder(const QString& dir)
     return open;
 }
 
+/// Eingabe-Filter waehrend eines Laufs. Der Lauf verarbeitet zwischen zwei
+/// Zeichnungen alle Ereignisse, damit der Knopf "Abbrechen" Klicks bekommt.
+/// Alle anderen Eingaben an Qt-Fenster werden verschluckt - bis 2.4 blieben
+/// sie mit ExcludeUserInputEvents liegen und kamen nach dem Lauf an.
+/// Durch kommen: der Abbrechen-Knopf, ein offener modaler Dialog (Rueckfrage
+/// mitten im Lauf) und Mausrad/Bildlaufleisten im Protokoll des Fensters.
+class RunInputBlocker : public QObject {
+public:
+    RunInputBlocker(QWidget* window, QWidget* tab, QWidget* cancel, QObject* parent)
+        : QObject(parent), m_window(window), m_tab(tab), m_cancel(cancel) {}
+
+protected:
+    bool eventFilter(QObject* obj, QEvent* ev) override {
+        const QEvent::Type t = ev->type();
+        bool mouse = false;
+        switch (t) {
+        case QEvent::MouseButtonPress:
+        case QEvent::MouseButtonRelease:
+        case QEvent::MouseButtonDblClick:
+        case QEvent::Wheel:
+            mouse = true;
+            break;
+        case QEvent::KeyPress:
+        case QEvent::KeyRelease:
+        case QEvent::Shortcut:
+        case QEvent::ShortcutOverride:
+        case QEvent::ContextMenu:
+        case QEvent::TouchBegin:
+        case QEvent::TouchUpdate:
+        case QEvent::TouchEnd:
+        case QEvent::TabletPress:
+        case QEvent::TabletRelease:
+        case QEvent::DragEnter:
+        case QEvent::DragMove:
+        case QEvent::Drop:
+            break;
+        case QEvent::Close:
+            // Nur Schliessen ueber den Fensterrahmen. close() aus dem Code
+            // (Tooltips, Dialoge) ist nicht spontan und bleibt erlaubt.
+            if (!ev->spontaneous()) return false;
+            break;
+        default:
+            return false;
+        }
+
+        // Ereignisse an das QWindow laufen weiter; entschieden wird beim
+        // Widget, an das Qt sie danach zustellt
+        QWidget* w = qobject_cast<QWidget*>(obj);
+        if (!w) return false;
+
+        if (QWidget* modal = QApplication::activeModalWidget()) {
+            if (modal == w || modal->isAncestorOf(w)) return false;
+        }
+        if (m_cancel && (w == m_cancel || m_cancel->isAncestorOf(w))) return false;
+        if (mouse && m_window && m_window->isAncestorOf(w)
+            && !(m_tab && m_tab->isAncestorOf(w))) {
+            for (QWidget* p = w; p && p != m_window; p = p->parentWidget()) {
+                if (qobject_cast<QAbstractScrollArea*>(p) || qobject_cast<QScrollBar*>(p)) {
+                    return false;
+                }
+            }
+        }
+        // Verschluckt. Ein QCloseEvent muss dazu abgelehnt werden, sonst
+        // schliesst Qt das Fenster trotzdem.
+        if (t == QEvent::Close) ev->ignore();
+        return true;
+    }
+
+private:
+    QPointer<QWidget> m_window;
+    QPointer<QWidget> m_tab;
+    QPointer<QWidget> m_cancel;
+};
+
+#ifdef _WIN32
+/// Windows: Eingaben an Fenster, die nicht zu Qt gehoeren (BricsCAD selbst),
+/// waehrend eines Laufs verschlucken. Die Qt-Fenster entscheidet
+/// RunInputBlocker. Ohne diesen Filter koennte man mitten im Lauf in
+/// BricsCAD Befehle starten, weil der Lauf jetzt alle Ereignisse verarbeitet.
+class RunNativeBlocker : public QAbstractNativeEventFilter {
+public:
+    bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr*) override {
+        if (eventType != "windows_dispatcher_MSG") return false;
+        const MSG* msg = static_cast<const MSG*>(message);
+        if (!msg || !msg->hwnd) return false;
+        const UINT m = msg->message;
+        const bool input = (m >= 0x0100 && m <= 0x0109)     // WM_KEYFIRST..WM_KEYLAST
+                        || (m >= 0x0200 && m <= 0x020E)     // WM_MOUSEFIRST..WM_MOUSELAST
+                        || (m >= 0x00A0 && m <= 0x00AD)     // WM_NCMOUSEMOVE..WM_NCXBUTTONDBLCLK
+                        || m == 0x0240                      // WM_TOUCH
+                        || (m >= 0x0245 && m <= 0x024F);    // WM_POINTER...
+        if (!input) return false;
+        const HWND root = GetAncestor(msg->hwnd, GA_ROOT);
+        if (root && QWidget::find(reinterpret_cast<WId>(root))) return false;
+        return true;
+    }
+};
+#endif
+
+/// Laeuft der Prozess noch?
+bool processAlive(qint64 pid) {
+    if (pid <= 0) return false;
+#ifdef _WIN32
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, static_cast<DWORD>(pid));
+    if (!h) return false;
+    DWORD code = 0;
+    const BOOL ok = GetExitCodeProcess(h, &code);
+    CloseHandle(h);
+    return ok && code == STILL_ACTIVE;
+#else
+    return ::kill(static_cast<pid_t>(pid), 0) == 0 || errno == EPERM;
+#endif
+}
+
+/// Prozess beenden: unter Linux erst hoeflich (SIGTERM, bis 5 s), dann hart
+void terminateProcess(qint64 pid) {
+    if (pid <= 0) return;
+#ifdef _WIN32
+    HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, static_cast<DWORD>(pid));
+    if (h) {
+        TerminateProcess(h, 1);
+        WaitForSingleObject(h, 5000);
+        CloseHandle(h);
+    }
+#else
+    ::kill(static_cast<pid_t>(pid), SIGTERM);
+    QElapsedTimer waited;
+    waited.start();
+    while (processAlive(pid) && waited.elapsed() < 5000) {
+        QThread::msleep(100);
+    }
+    if (processAlive(pid)) ::kill(static_cast<pid_t>(pid), SIGKILL);
+#endif
+}
+
 }  // namespace
 
 bool OpenCirtTab::checkNoOpenDrawings(const QString& title) {
@@ -643,20 +818,50 @@ bool OpenCirtTab::checkNoOpenDrawings(const QString& title) {
 
     logError(QString("%1: %2 Zeichnung(en) des Projekts sind im Editor geoeffnet")
              .arg(title).arg(open.size()));
-    showListWarning(this, title,
-        "Diese Zeichnungen des Projekts sind in BricsCAD geoeffnet:",
-        open,
-        "Geoeffnete Zeichnungen lassen sich nicht bearbeiten. Bitte schliessen "
-        "und den Lauf erneut starten. Es wurde nichts geaendert.");
+    if (interaktiv()) {
+        showListWarning(this, title,
+            "Diese Zeichnungen des Projekts sind in BricsCAD geoeffnet:",
+            open,
+            "Geoeffnete Zeichnungen lassen sich nicht bearbeiten. Bitte schliessen "
+            "und den Lauf erneut starten. Es wurde nichts geaendert.");
+    } else {
+        for (const QString& f : open) log("  geoeffnet: " + f, "ERROR");
+    }
     return false;
 }
 
-void OpenCirtTab::beginRun(QPushButton* button, const QString& busyText) {
+void OpenCirtTab::beginRun(QPushButton* button, const QString& busyText,
+                           const QString& aktion) {
     m_running = true;
+    m_cancelRequested = false;
+    OcRunStatus::abbruchEntfernen();
     OcEngine::beginBackupRun();
     m_runButton = button;
     m_runButtonText = button ? button->text() : QString();
     if (button) button->setText(busyText);
+
+    // Laufstatus: ein Auftrag hat ihn schon bei der Annahme begonnen
+    if (!m_status.active()) {
+        m_status.begin(aktion, "knopf", m_projectRoot, QString());
+    }
+    m_status.setBricscadFrei(false);
+
+    m_btnCancel->setText("Abbrechen");
+    m_btnCancel->setEnabled(true);
+    m_btnCancel->setVisible(true);
+
+    // Eingaben sperren, ausser fuer den Abbrechen-Knopf (siehe RunInputBlocker)
+    if (!m_inputBlocker) {
+        m_inputBlocker = new RunInputBlocker(window(), this, m_btnCancel, this);
+        qApp->installEventFilter(m_inputBlocker);
+    }
+#ifdef _WIN32
+    if (!m_nativeBlocker) {
+        m_nativeBlocker = new RunNativeBlocker();
+        qApp->installNativeEventFilter(m_nativeBlocker);
+    }
+#endif
+
     updateButtonStates();
     showProgress(busyText);
 }
@@ -669,27 +874,45 @@ void OpenCirtTab::beginPhase(const QString& label, int total) {
     m_progressBar->setValue(0);
     m_progressBar->setFormat(QString("%1: 0 von %2").arg(label).arg(total));
     m_progressBar->setVisible(true);
-    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    m_status.setPhase(label, 0, total, QString());
+    processRunEvents();
+    checkCancel();
 }
 
 void OpenCirtTab::stepDone(const QString& fileName) {
-    // Waehrend des Laufs wird die Anzeige weiter gezeichnet, Eingaben bleiben
-    // liegen: niemand kann mitten im Lauf etwas anderes anstossen.
+    // Waehrend des Laufs wird die Anzeige weiter gezeichnet; Eingaben nimmt
+    // nur der Abbrechen-Knopf an, niemand kann mitten im Lauf etwas anderes
+    // anstossen. Ein Abbruch greift hier, zwischen zwei Zeichnungen.
     ++m_phaseDone;
     m_progressBar->setValue(m_phaseDone);
     m_progressBar->setFormat(QString("%1: %2 von %3 - %4")
                              .arg(m_phaseLabel).arg(m_phaseDone).arg(m_phaseTotal).arg(fileName));
-    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    m_status.setPhase(m_phaseLabel, m_phaseDone, m_phaseTotal, fileName);
+    processRunEvents();
+    checkCancel();
 }
 
 void OpenCirtTab::endRun() {
     // Extraktionsdaten gelten nur fuer den Lauf, der sie geschrieben hat
     m_extractFresh = false;
+    if (m_inputBlocker) {
+        qApp->removeEventFilter(m_inputBlocker);
+        delete m_inputBlocker;
+        m_inputBlocker = nullptr;
+    }
+#ifdef _WIN32
+    if (m_nativeBlocker) {
+        qApp->removeNativeEventFilter(m_nativeBlocker);
+        delete m_nativeBlocker;
+        m_nativeBlocker = nullptr;
+    }
+#endif
     hideProgress();
     if (m_runButton) m_runButton->setText(m_runButtonText);
     m_runButton = nullptr;
     m_running = false;
     updateButtonStates();
+    scheduleStatusFinish();
 }
 
 void OpenCirtTab::showProgress(const QString& text) {
@@ -699,12 +922,167 @@ void OpenCirtTab::showProgress(const QString& text) {
     m_progressBar->setValue(0);
     m_progressBar->setFormat(text);
     m_progressBar->setVisible(true);
-    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    m_status.setText(text);
+    processRunEvents();
+    checkCancel();
 }
 
 void OpenCirtTab::hideProgress() {
     m_progressBar->setVisible(false);
     m_progressBar->setFormat(QString());
+    m_btnCancel->setVisible(false);
+}
+
+// ============================================================================
+// Abbrechen
+// ============================================================================
+
+void OpenCirtTab::processRunEvents() {
+    // Ausserhalb eines Laufs (IO-Liste, Testdaten) wie bisher ohne Eingaben
+    QApplication::processEvents(m_running ? QEventLoop::AllEvents
+                                          : QEventLoop::ExcludeUserInputEvents);
+}
+
+bool OpenCirtTab::cancelRequested() {
+    if (!m_cancelRequested && m_running && OcRunStatus::abbruchAngefordert()) {
+        m_cancelRequested = true;
+        m_btnCancel->setText("Wird abgebrochen...");
+        m_btnCancel->setEnabled(false);
+        log("Abbruch von aussen angefordert - der Lauf haelt nach der aktuellen Zeichnung an",
+            "WARN");
+        m_status.setAbbruchAngefordert();
+    }
+    return m_cancelRequested;
+}
+
+void OpenCirtTab::checkCancel() {
+    if (m_running && cancelRequested()) throw RunCancelled();
+}
+
+void OpenCirtTab::onCancelClicked() {
+    // Waehrend die Batch-Instanz die PDF erzeugt, laeuft kein Lauf mehr im
+    // Fenster: dann wird die Batch-Instanz beendet
+    if (!m_running && m_pdfDoneTimer && m_pdfDoneTimer->isActive()) {
+        cancelPublish("PDF publizieren: Abbruch durch Benutzer");
+        return;
+    }
+    if (!m_running || m_cancelRequested) return;
+    m_cancelRequested = true;
+    m_btnCancel->setText("Wird abgebrochen...");
+    m_btnCancel->setEnabled(false);
+    log("Abbruch angefordert - der Lauf haelt nach der aktuellen Zeichnung an", "WARN");
+    m_status.setAbbruchAngefordert();
+}
+
+void OpenCirtTab::reportCancelled(const QString& title, const QString& stand) {
+    const bool dialog = interaktiv();
+    const QString line = QString("%1 abgebrochen %2").arg(title, stand);
+    logError(line);
+    finishStatus("abgebrochen", line);
+    if (dialog) {
+        QMessageBox::warning(this, title, line);
+    }
+}
+
+// ============================================================================
+// Auftraege von aussen, Laufstatus
+// ============================================================================
+
+bool OpenCirtTab::isBusy() const {
+    return m_running || m_auftrag || m_handlerDepth > 0
+           || (m_pdfDoneTimer && m_pdfDoneTimer->isActive());
+}
+
+QString OpenCirtTab::acceptAuftrag(const QString& auftragPath) {
+    if (isBusy()) {
+        QString was = m_status.active() ? m_status.aktion() : QString("ein Lauf");
+        if (m_pdfDoneTimer && m_pdfDoneTimer->isActive()) was = "PDF publizieren";
+        else if (!m_running && !m_auftrag && m_handlerDepth > 0)
+            was = "im openCirt-Fenster ist ein Dialog offen";
+        return QString("FEHLER: openCirt arbeitet schon (%1) - Auftrag nicht angenommen").arg(was);
+    }
+
+    auto auftrag = std::make_unique<OcAuftrag>();
+    QString error;
+    if (!OcAuftrag::fromFile(auftragPath, *auftrag, error)) {
+        return "FEHLER: " + error;
+    }
+
+    // Offene Zeichnungen des Projekts: gleich ablehnen statt erst im Lauf
+    const QStringList open = openEditorDrawingsUnder(
+        auftrag->projekt + "/" + OpenCirtConfig::ZEICHNUNGEN_DIR);
+    if (!open.isEmpty()) {
+        return QString("FEHLER: %1 Zeichnung(en) des Projekts sind in BricsCAD geoeffnet "
+                       "(z. B. %2) - bitte schliessen")
+               .arg(open.size()).arg(QDir::toNativeSeparators(open.first()));
+    }
+    if (auftrag->aktion == "pdf" && QFileInfo::exists(auftrag->ziel) && !auftrag->ersetzen) {
+        return QString("FEHLER: Die PDF gibt es schon: %1 (\"ersetzen\": true, wenn sie "
+                       "ersetzt werden soll)").arg(QDir::toNativeSeparators(auftrag->ziel));
+    }
+
+    // Projekt und Optionen sichtbar ins Fenster uebernehmen - als haette der
+    // Anwender sie selbst gewaehlt
+    if (QDir::cleanPath(m_projectRoot) != auftrag->projekt) {
+        setProjectRoot(auftrag->projekt);
+    }
+    if (auftrag->aktion == "erstellen") {
+        m_chkIncludeBmk->setChecked(auftrag->bmk);
+        m_chkIncludeBas->setChecked(auftrag->bas);
+        m_chkIncludeLl->setChecked(auftrag->leistungslisten);
+    }
+
+    m_auftrag = std::move(auftrag);
+    m_status.begin(m_auftrag->aktion, "auftrag", m_auftrag->projekt, m_auftrag->id);
+    log(QString("=== AUFTRAG %1: %2 ===").arg(m_auftrag->id, m_auftrag->beschreibung()));
+    updateButtonStates();
+
+    // Nicht innerhalb des LISP-Aufrufs arbeiten: der Lauf beginnt im
+    // naechsten Durchgang der Ereignisschleife, wie nach einem Knopfdruck
+    QTimer::singleShot(0, this, &OpenCirtTab::runAuftrag);
+
+    return QString("OK: Auftrag %1 angenommen: %2 - Projekt %3. Stand: %4")
+           .arg(m_auftrag->id, m_auftrag->beschreibung(),
+                QDir::toNativeSeparators(m_auftrag->projekt),
+                QDir::toNativeSeparators(OcRunStatus::statusPath()));
+}
+
+void OpenCirtTab::runAuftrag() {
+    if (!m_auftrag) return;
+    if (m_auftrag->aktion == "erstellen") {
+        onFullProjectGenerate();
+    } else if (m_auftrag->aktion == "pdf") {
+        onPublishPdf();
+    }
+    // Lauf gar nicht erst begonnen (z. B. Projektstruktur unvollstaendig)
+    // oder schon fertig: Status abschliessen
+    scheduleStatusFinish();
+}
+
+void OpenCirtTab::scheduleStatusFinish() {
+    if (m_finishScheduled) return;
+    m_finishScheduled = true;
+    QTimer::singleShot(0, this, [this]() {
+        m_finishScheduled = false;
+        if (!m_status.active() || m_running) return;
+        // Zwischen Inhaltsverzeichnis und Start der Batch-Instanz verarbeitet
+        // openCirt Ereignisse; dann ist der Lauf noch nicht zu Ende. Das Ende
+        // des Handlers (HandlerScope) plant den Abschluss erneut.
+        if (m_publishPreparing) return;
+        if (m_pdfDoneTimer && m_pdfDoneTimer->isActive()) return;   // Batch-Instanz arbeitet
+        const QString ergebnis = m_status.letzteErgebniszeile();
+        if (ergebnis.isEmpty()) {
+            finishStatus("fehler", "Lauf ohne Ergebnismeldung beendet - siehe Protokoll");
+        } else {
+            finishStatus(m_status.letzteErgebniszeileIstFehler() ? "fehler" : "fertig");
+        }
+    });
+}
+
+void OpenCirtTab::finishStatus(const QString& zustand, const QString& ergebnis) {
+    m_status.finish(zustand, ergebnis);
+    m_auftrag.reset();
+    updateButtonStates();
 }
 
 
@@ -772,6 +1150,18 @@ bool OpenCirtTab::confirmMissingReferences(const QVector<SourceDrawingInfo>& dra
         logError(QString("  Fehlend: %1 (in: %2)").arg(ref, dwgs.join(", ")));
     }
 
+    if (!interaktiv()) {
+        // Der Auftrag beantwortet die Rueckfrage; ohne Angabe: abbrechen
+        if (m_auftrag->fehlendeReferenzenWeiter) {
+            log("Auftrag: fehlende DP-Referenzen -> weiter (Datenpunkte mit 0 und [!REF])",
+                "WARN");
+            return true;
+        }
+        logError("Auftrag: fehlende DP-Referenzen -> abbrechen "
+                 "(\"fehlende_referenzen\": \"weiter\", um trotzdem zu erstellen)");
+        return false;
+    }
+
     const bool weiter = showTreeWarning(
         this, "Fehlende DP-Referenzen",
         QString("ACHTUNG: %1 Datenpunkt-Referenz(en) fehlen in "
@@ -788,7 +1178,11 @@ bool OpenCirtTab::confirmMissingReferences(const QVector<SourceDrawingInfo>& dra
 }
 
 void OpenCirtTab::updateButtonStates() {
-    const bool enabled = !m_projectRoot.isEmpty() && !m_running;
+    // Gesperrt auch, solange ein Auftrag angenommen ist oder die
+    // Batch-Instanz die PDF erzeugt: dann darf niemand die Zeichnungen
+    // aendern, die gerade geplottet werden
+    const bool busy = isBusy();
+    const bool enabled = !m_projectRoot.isEmpty() && !busy;
     m_btnProjektAufbau->setEnabled(enabled);
     m_btnPublish->setEnabled(enabled);
     m_btnSensorliste->setEnabled(enabled);
@@ -802,8 +1196,8 @@ void OpenCirtTab::updateButtonStates() {
     m_chkIncludeBas->setEnabled(enabled);
     m_chkIncludeLl->setEnabled(enabled);
     // Waehrend eines Laufs bleibt auch der Projektordner fest
-    m_projectEdit->setEnabled(!m_running);
-    m_btnBrowse->setEnabled(!m_running);
+    m_projectEdit->setEnabled(!busy);
+    m_btnBrowse->setEnabled(!busy);
 }
 
 
@@ -1173,7 +1567,12 @@ bool OpenCirtTab::convertOdsToCSV(const QString& odsPath, const QString& csvPath
                     proc.waitForFinished(5000);
                     break;
                 }
-                QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+                processRunEvents();
+                if (m_running && cancelRequested()) {
+                    proc.kill();
+                    proc.waitForFinished(5000);
+                    throw RunCancelled();
+                }
             }
             if (problem.isEmpty()
                 && (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0)) {
@@ -1281,8 +1680,10 @@ bool OpenCirtTab::convertOdsToCSV(const QString& odsPath, const QString& csvPath
 
 void OpenCirtTab::log(const QString& message, const QString& type) {
     // Ausgabe uebernimmt das "Processing Log" des Hauptfensters. Der Tab haelt
-    // bewusst keine zweite Ansicht desselben Textes.
+    // bewusst keine zweite Ansicht desselben Textes. Waehrend eines Laufs
+    // geht die Zeile zusaetzlich ins Protokoll des Laufstatus.
     emit logMessage(message, type);
+    m_status.log(type, message);
 }
 
 void OpenCirtTab::logError(const QString& message) {
@@ -1296,6 +1697,11 @@ void OpenCirtTab::logSuccess(const QString& message) {
 void OpenCirtTab::reportError(const QString& title, const QString& line,
                               const QString& details, bool fatal) {
     logError(line);
+    if (!interaktiv()) {
+        // Auftrag: kein Dialog, die Erlaeuterung steht im Protokoll
+        if (!details.isEmpty()) log(QString(details).replace('\n', ' '), "INFO");
+        return;
+    }
     const QString text = details.isEmpty() ? line : line + "\n\n" + details;
     if (fatal) {
         QMessageBox::critical(this, title, text);
@@ -1317,6 +1723,7 @@ bool OpenCirtTab::requireProjectStructure() {
 // ============================================================================
 
 void OpenCirtTab::onFullProjectGenerate() {
+    HandlerScope scope(this);
     if (!requireProjectStructure()) return;
     
     // Ohne die Referenz wuerden saemtliche Datenpunkte mit 0 belegt. Die Pruefung
@@ -1334,18 +1741,22 @@ void OpenCirtTab::onFullProjectGenerate() {
     if (!checkNoOpenDrawings("Projekt erstellen")) return;
 
     const bool doLl = m_chkIncludeLl->isChecked();
-    QMessageBox::StandardButton reply = QMessageBox::warning(this,
-        "Projekt erstellen",
-        QString("Empfehlung: Speichern Sie den gesamten Zeichnungsordner vorher als "
-        "ZIP-Archiv als Sicherungskopie.\n\n"
-        "Schritte: Deckblaetter + BMK + BAS + Extraktion + GA-FL + Summen + Textbreiten%1\n"
-        "Alle bestehenden *_Deckblatt.dwg, *_GA_FL_*.dwg%2 und *_Summe*.dwg werden geloescht.\n\n"
-        "Fortfahren?")
-            .arg(doLl ? " + Leistungslisten" : "",
-                 doLl ? ", *_Leistungsliste_*.dwg" : ""),
-        QMessageBox::Yes | QMessageBox::Cancel);
-    
-    if (reply != QMessageBox::Yes) return;
+    // Mit Auftrag entfaellt die Sicherheitsabfrage: der Auftrag selbst ist
+    // die ausdrueckliche Anweisung
+    if (interaktiv()) {
+        QMessageBox::StandardButton reply = QMessageBox::warning(this,
+            "Projekt erstellen",
+            QString("Empfehlung: Speichern Sie den gesamten Zeichnungsordner vorher als "
+            "ZIP-Archiv als Sicherungskopie.\n\n"
+            "Schritte: Deckblaetter + BMK + BAS + Extraktion + GA-FL + Summen + Textbreiten%1\n"
+            "Alle bestehenden *_Deckblatt.dwg, *_GA_FL_*.dwg%2 und *_Summe*.dwg werden geloescht.\n\n"
+            "Fortfahren?")
+                .arg(doLl ? " + Leistungslisten" : "",
+                     doLl ? ", *_Leistungsliste_*.dwg" : ""),
+            QMessageBox::Yes | QMessageBox::Cancel);
+
+        if (reply != QMessageBox::Yes) return;
+    }
     
     log("=== PROJEKT ERSTELLEN ===");
     saveConfig();
@@ -1362,20 +1773,51 @@ void OpenCirtTab::onFullProjectGenerate() {
     timer.start();
 
     RunCounts counts;
-    beginRun(m_btnFullProject, "Projekt wird erstellt...");
+    beginRun(m_btnFullProject, "Projekt wird erstellt...", "erstellen");
     // Leistungsstempel ohne Geraet vor dem ersten Schreibzugriff melden:
     // bei "Abbrechen" ist am Projekt noch nichts geaendert
-    if (doLl && !precheckLeistungsstempel(dwgFiles, m_chkIncludeBas->isChecked())) {
+    bool prechecked = false;
+    bool finished = false;
+    try {
+        if (doLl && !precheckLeistungsstempel(dwgFiles, m_chkIncludeBas->isChecked())) {
+            endRun();
+            logError("Projekt erstellen abgebrochen bei der Pruefung der Anlagenleistungslisten "
+                     "(siehe oben) - nichts geaendert");
+            return;
+        }
+        prechecked = true;
+        finished = runGesamtlauf(dwgFiles, counts);
+    } catch (const RunCancelled&) {
         endRun();
-        log("Projekt erstellen abgebrochen (Leistungsstempel ohne Geraet) - nichts geaendert");
+        const qint64 s = timer.elapsed() / 1000;
+        reportCancelled("Projekt erstellen",
+            prechecked
+            ? QString("nach %1:%2 min. Die bis dahin bearbeiteten Zeichnungen sind "
+                      "gespeichert, das Projekt ist unvollstaendig (Deckblaetter, GA-FL-, "
+                      "Summenblaetter, Listen) - bitte \"Projekt erstellen\" erneut starten.")
+                  .arg(s / 60).arg(s % 60, 2, 10, QChar('0'))
+            : QString("waehrend der Pruefung der Leistungsstempel - am Projekt wurde "
+                      "nichts geaendert."));
         return;
     }
-    const bool finished = runGesamtlauf(dwgFiles, counts);
     endRun();
 
     const qint64 seconds = timer.elapsed() / 1000;
     const QString dauer = QString("%1:%2 min")
         .arg(seconds / 60).arg(seconds % 60, 2, 10, QChar('0'));
+
+    m_status.setZaehler("deckblaetter", counts.deckblaetter);
+    m_status.setZaehler("datenpunkte", counts.datenpunkte);
+    m_status.setZaehler("ga_fl_blaetter", counts.gaFl);
+    m_status.setZaehler("summenblaetter", counts.summen);
+    m_status.setZaehler("textbreiten", counts.textbreiten);
+    m_status.setZaehler("bmk", counts.bmk);
+    m_status.setZaehler("bas", counts.bas);
+    if (doLl) {
+        m_status.setZaehler("leistungslisten_blaetter", counts.leistungslisten);
+        m_status.setZaehler("leistungslisten_stempel", counts.llZeilen);
+    }
+    m_status.setZaehler("fehler", counts.errors);
 
     if (!finished) {
         logError(QString("Projekt erstellen abgebrochen nach %1").arg(dauer));
@@ -1401,17 +1843,22 @@ void OpenCirtTab::onFullProjectGenerate() {
         logSuccess(QString("Projekt erstellt in %1: %2 GA-FL-Blaetter, %3 Summenblaetter, "
                            "%4 Deckblaetter")
                    .arg(dauer).arg(counts.gaFl).arg(counts.summen).arg(counts.deckblaetter));
-        QMessageBox::information(this, "Projekt erstellen",
-            "Projekt erstellt.\n\n" + summary);
+        if (interaktiv()) {
+            QMessageBox::information(this, "Projekt erstellen",
+                "Projekt erstellt.\n\n" + summary);
+        }
     } else {
         logError(QString("Projekt erstellt mit %1 Fehler(n) in %2 - siehe Protokoll")
                  .arg(counts.errors).arg(dauer));
-        QMessageBox::warning(this, "Projekt erstellen",
-            "Projekt erstellt - es gab Fehler, bitte das Protokoll pruefen.\n\n" + summary);
+        if (interaktiv()) {
+            QMessageBox::warning(this, "Projekt erstellen",
+                "Projekt erstellt - es gab Fehler, bitte das Protokoll pruefen.\n\n" + summary);
+        }
     }
 }
 
 void OpenCirtTab::onBasKonfigurieren() {
+    HandlerScope scope(this);
     if (m_projectRoot.isEmpty()) return;
     const QString basPath = referencePath(OpenCirtConfig::BAS_CSV);
     BasConfigDialog dlg(basPath, this);
@@ -1424,6 +1871,7 @@ void OpenCirtTab::onBasKonfigurieren() {
 }
 
 void OpenCirtTab::onSeitennamenKonfigurieren() {
+    HandlerScope scope(this);
     if (m_projectRoot.isEmpty()) return;
     const QString pfad = referencePath(OpenCirtConfig::SEITENNAMEN_CSV);
     SeitennamenConfigDialog dlg(pfad, this);
@@ -1740,6 +2188,7 @@ bool OpenCirtTab::runGesamtlauf(const QStringList& dwgFiles, RunCounts& counts) 
 // ============================================================================
 
 void OpenCirtTab::onSensorListeGenerate() {
+    HandlerScope scope(this);
     if (!requireProjectStructure()) return;
 
     log("=== SENSORLISTE ERSTELLEN ===");
@@ -1774,10 +2223,18 @@ void OpenCirtTab::onSensorListeGenerate() {
 
     QStringList unreadable;
     QVector<SourceDrawingInfo> drawings;
-    beginRun(m_btnSensorliste, "Sensorliste wird erstellt...");
-    const bool extracted = extractDrawings(dwgFiles, QStringLiteral("Sensorliste"), unreadable);
-    if (extracted && unreadable.isEmpty()) {
-        drawings = readExtractedData(dwgFiles);
+    beginRun(m_btnSensorliste, "Sensorliste wird erstellt...", "sensorliste");
+    bool extracted = false;
+    try {
+        extracted = extractDrawings(dwgFiles, QStringLiteral("Sensorliste"), unreadable);
+        if (extracted && unreadable.isEmpty()) {
+            drawings = readExtractedData(dwgFiles);
+        }
+    } catch (const RunCancelled&) {
+        endRun();
+        reportCancelled("Sensorliste", "- die Zeichnungen wurden nur gelesen, nichts geaendert; "
+                                       "es wurde keine Sensorliste geschrieben.");
+        return;
     }
     endRun();
 
@@ -2033,6 +2490,7 @@ static SheetAttributes readSheetAttributes(const QString& dwgPath, const QString
 // braucht, loescht sie in der erzeugten CSV-Datei.
 
 void OpenCirtTab::onDatenpunktExport() {
+    HandlerScope scope(this);
     if (!requireProjectStructure()) return;
 
     // --- 0. Filterdialog ---
@@ -2725,6 +3183,7 @@ QString gaFlDumpJson(const QString& fileBase, const QMap<QString, QString>& a,
 }  // namespace
 
 void OpenCirtTab::onTestdatenExport() {
+    HandlerScope scope(this);
     if (!requireProjectStructure()) return;
 
     const QString title = QStringLiteral("Export Testdaten");
@@ -2905,6 +3364,7 @@ void OpenCirtTab::onTestdatenExport() {
 // ============================================================================
 
 void OpenCirtTab::onProjektBereinigen() {
+    HandlerScope scope(this);
     if (!requireProjectStructure()) return;
     
     QString drawingsDir = projectPath(OpenCirtConfig::ZEICHNUNGEN_DIR);
@@ -3005,6 +3465,7 @@ void OpenCirtTab::onProjektBereinigen() {
 // ============================================================================
 
 void OpenCirtTab::onProjektAufbauen() {
+    HandlerScope scope(this);
     const QString title = "Projekt aufbauen";
 
     if (m_projectRoot.isEmpty()) {
@@ -3131,10 +3592,11 @@ void OpenCirtTab::onProjektAufbauen() {
     }
 
     // -------- Aufbau --------
-    // Waehrend des Laufs keine Eingaben annehmen: die Anzeige wird weiter
-    // gezeichnet, Klicks und Tasten bleiben liegen.
-    m_btnProjektAufbau->setEnabled(false);
-    m_btnProjektAufbau->setText("Projekt wird aufgebaut...");
+    // Waehrend des Laufs nimmt nur der Abbrechen-Knopf Eingaben an; die
+    // Anzeige wird weiter gezeichnet. Ein Abbruch greift vor der naechsten
+    // Zeichnung (ProjectBuilder::setCancelCheck), nicht ueber RunCancelled:
+    // die Fortschrittsmeldung kommt hier ueber ein Signal.
+    beginRun(m_btnProjektAufbau, "Projekt wird aufgebaut...", "aufbauen");
     m_progressBar->setRange(0, pv.planCount);
     m_progressBar->setValue(0);
     m_progressBar->setVisible(true);
@@ -3144,14 +3606,22 @@ void OpenCirtTab::onProjektAufbauen() {
             m_progressBar->setValue(current);
             m_progressBar->setFormat(QString("Projekt aufbauen: %1 von %2 - %3")
                                      .arg(current).arg(total).arg(fileName));
-            QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+            m_status.setPhase("Projekt aufbauen", current, total, fileName);
+            processRunEvents();
         });
+    builder.setCancelCheck([this]() { return cancelRequested(); });
 
     const ProjectBuilder::Result result = builder.runReal();
 
-    hideProgress();
-    m_btnProjektAufbau->setText("Projekt aufbauen");
-    m_btnProjektAufbau->setEnabled(true);
+    endRun();
+
+    if (result.cancelled) {
+        reportCancelled(title,
+            QString("nach %1 von %2 Zeichnung(en). '05- Projekt Zeichnungen' wurde vorher "
+                    "geleert und ist jetzt unvollstaendig - den Aufbau erneut starten.\n\nLog: %3")
+                .arg(result.done).arg(pv.planCount).arg(logPath));
+        return;
+    }
 
     if (result.aborted) {
         reportError(title, "Aufbau abgebrochen: Stempel nicht gefunden",
@@ -5379,6 +5849,10 @@ QString OpenCirtTab::generateDsdFile(const QStringList& orderedDwgs,
         }
     }
 
+    // Jedes Blatt wird gelesen (Layout, Plankopf) - bei grossen Projekten
+    // dauert das; im Lauf mit Fortschritt und Abbruchmoeglichkeit
+    if (m_running) beginPhase("Lesezeichen lesen", orderedDwgs.size());
+
     int sheetIdx = 0;
     for (const QString& dwgPath : orderedDwgs) {
         QString fileName = QFileInfo(dwgPath).completeBaseName();
@@ -5423,6 +5897,7 @@ QString OpenCirtTab::generateDsdFile(const QStringList& orderedDwgs,
         log(QString("  Sheet %1: %2 -> \"%3\" (Layout \"%4\")")
             .arg(sheetIdx + 1, 3).arg(fileName, displayName, layoutName));
         sheetIdx++;
+        if (m_running) stepDone(fileName);
     }
     
     // Target section: Type=6 = multi-sheet PDF. Der Aufbau der Sektionen
@@ -5482,6 +5957,8 @@ QString OpenCirtTab::generateDsdFile(const QStringList& orderedDwgs,
 }
 
 void OpenCirtTab::onPublishPdf() {
+    HandlerScope scope(this);
+    m_publishPreparing = true;   // bis die Batch-Instanz laeuft (HandlerScope setzt zurueck)
     if (!requireProjectStructure()) return;
     
     log("=== PDF PUBLIZIEREN ===");
@@ -5521,43 +5998,93 @@ void OpenCirtTab::onPublishPdf() {
     }
     
     // Ausgabe (Ordner, Dateiname) jedes Mal abfragen - ohne Vorgabe und
-    // ohne etwas zu merken. Abbrechen = Lauf abbrechen.
+    // ohne etwas zu merken. Abbrechen = Lauf abbrechen. Ein Auftrag nennt
+    // das Ziel selbst.
     QString outDir, outName;
-    if (!askPublishTarget(orderedDwgs.size(), tocPageCount, outDir, outName)) return;
+    if (interaktiv()) {
+        if (!askPublishTarget(orderedDwgs.size(), tocPageCount, outDir, outName)) return;
+    } else {
+        const QFileInfo ziel(m_auftrag->ziel);
+        if (ziel.exists() && !m_auftrag->ersetzen) {
+            logError("PDF gibt es schon, der Auftrag erlaubt kein Ersetzen: "
+                     + QDir::toNativeSeparators(ziel.absoluteFilePath()));
+            return;
+        }
+        if (!QDir().mkpath(ziel.absolutePath())) {
+            logError("Speicherort konnte nicht angelegt werden: "
+                     + QDir::toNativeSeparators(ziel.absolutePath()));
+            return;
+        }
+        outDir = ziel.absolutePath();
+        outName = ziel.fileName();
+        log(QString("Ziel aus dem Auftrag: %1%2 (%3 Zeichnungen + %4 Inhaltsseiten)")
+            .arg(QDir::toNativeSeparators(ziel.absoluteFilePath()),
+                 ziel.exists() ? ", wird ersetzt" : "")
+            .arg(orderedDwgs.size()).arg(tocPageCount));
+    }
     
     log(QString("Inhaltsverzeichnis: %1 Eintraege auf %2 Seiten")
         .arg(entries.size()).arg(tocPageCount));
     
-    if (tocPageCount > 0) {
-        beginRun(m_btnPublish, "Inhalt wird erstellt...");
-        const int pages = createInhaltPages(entries, tocPageCount);
-        endRun();
-        if (pages < tocPageCount) {
-            logError("Inhaltsverzeichnis konnte nicht vollstaendig erzeugt werden - "
-                     "PDF wird nicht publiziert");
-            return;
-        }
-        logSuccess("Inhaltsverzeichnis erzeugt.");
-
-        // Re-collect DWGs (now includes the new Inhalt pages)
-        QStringList finalDwgs = collectOrderedDwgsForPublish();
-
-        log(QString("Publish-Reihenfolge (%1 Blaetter):").arg(finalDwgs.size()));
-        QString drawingsDir = projectPath(OpenCirtConfig::ZEICHNUNGEN_DIR);
-        for (int i = 0; i < finalDwgs.size(); ++i) {
-            QString rel = finalDwgs[i];
-            if (rel.startsWith(drawingsDir)) {
-                rel = rel.mid(drawingsDir.length() + 1);
+    // Inhaltsverzeichnis und Lesezeichen-Titel (DSD) gehoeren zum Lauf: sie
+    // zeigen Fortschritt und lassen sich abbrechen. Die Batch-Instanz
+    // arbeitet danach ausserhalb des Laufs; das Fenster wartet auf sie.
+    beginRun(m_btnPublish, tocPageCount > 0 ? "Inhalt wird erstellt..." : "PDF wird vorbereitet...",
+             "pdf");
+    try {
+        QStringList finalDwgs = orderedDwgs;
+        if (tocPageCount > 0) {
+            const int pages = createInhaltPages(entries, tocPageCount);
+            if (pages < tocPageCount) {
+                endRun();
+                logError("Inhaltsverzeichnis konnte nicht vollstaendig erzeugt werden - "
+                         "PDF wird nicht publiziert");
+                return;
             }
-            log(QString("  %1. %2").arg(i + 1, 3).arg(rel));
-        }
+            logSuccess("Inhaltsverzeichnis erzeugt.");
 
+            // Re-collect DWGs (now includes the new Inhalt pages)
+            finalDwgs = collectOrderedDwgsForPublish();
+
+            log(QString("Publish-Reihenfolge (%1 Blaetter):").arg(finalDwgs.size()));
+            QString drawingsDir = projectPath(OpenCirtConfig::ZEICHNUNGEN_DIR);
+            for (int i = 0; i < finalDwgs.size(); ++i) {
+                QString rel = finalDwgs[i];
+                if (rel.startsWith(drawingsDir)) {
+                    rel = rel.mid(drawingsDir.length() + 1);
+                }
+                log(QString("  %1. %2").arg(i + 1, 3).arg(rel));
+            }
+        } else {
+            log("Keine Inhaltseintraege gefunden - publiziere ohne Inhaltsverzeichnis.");
+        }
         launchPublish(finalDwgs, outDir, outName);
-    } else {
-        // No TOC entries -> publish directly
-        log("Keine Inhaltseintraege gefunden - publiziere ohne Inhaltsverzeichnis.");
-        launchPublish(orderedDwgs, outDir, outName);
+    } catch (const RunCancelled&) {
+        endRun();
+        reportCancelled("PDF publizieren",
+            "vor dem Start der Batch-Instanz - es wurde keine PDF erzeugt. Das "
+            "Inhaltsverzeichnis entsteht beim naechsten \"PDF publizieren\" neu.");
+        return;
     }
+    endRun();
+    if (m_pdfDoneTimer->isActive()) showPublishWaiting();
+    // Startet die Batch-Instanz nicht, ist der Lauf mit dem Ende dieses
+    // Handlers zu Ende (HandlerScope plant den Abschluss des Status)
+}
+
+void OpenCirtTab::showPublishWaiting() {
+    // Wie ein Lauf aussehen lassen, solange die Batch-Instanz plottet: Text
+    // im Knopf, Balken mit Hinweis, Abbrechen beendet die Batch-Instanz
+    m_btnPublish->setText("PDF wird erzeugt...");
+    m_progressBar->setRange(0, 1);
+    m_progressBar->setValue(0);
+    m_progressBar->setFormat("PDF wird in einer eigenen BricsCAD-Instanz erzeugt - "
+                             "dieses BricsCAD ist frei");
+    m_progressBar->setVisible(true);
+    m_btnCancel->setText("Abbrechen");
+    m_btnCancel->setEnabled(true);
+    m_btnCancel->setVisible(true);
+    updateButtonStates();
 }
 
 /**
@@ -5815,18 +6342,119 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs,
     log(QString("  SCR: FILEDIA=0 -> -PUBLISH -> Marker -> _.QUIT"));
     log(QString("  PDF-Ausgabe: %1").arg(m_publishedPdfPath));
     
-    bool started = QProcess::startDetached(bricscadExe, args);
+    // Prozessnummer merken: damit laesst sich die Batch-Instanz abbrechen und
+    // erkennen, ob sie ohne Ergebnis verschwunden ist
+    qint64 pid = 0;
+    const QDateTime startedAt = QDateTime::currentDateTime();
+    bool started = QProcess::startDetached(bricscadExe, args, QString(), &pid);
     if (started) {
-        logSuccess(QString("PDF-Publish gestartet in Batch-Instanz - Ausgabe: %1").arg(QFileInfo(m_publishedPdfPath).fileName()));
+        log(QString("PDF-Publish gestartet in Batch-Instanz (Prozess %1) - Ausgabe: %2")
+            .arg(pid).arg(QFileInfo(m_publishedPdfPath).fileName()));
         
-        // Start polling for completion marker
+        // Start polling for completion marker. Knopf, Balken und Abbrechen
+        // fuer die Wartezeit setzt onPublishPdf nach dem Ende des Laufs
+        // (showPublishWaiting).
         m_pdfDoneMarkerPath = markerPath;
-        m_btnPublish->setEnabled(false);
-        m_btnPublish->setText("PDF wird erzeugt...");
+        m_publishPid = pid;
+        m_publishStarted = startedAt;
+        m_publishGonePolls = 0;
         m_pdfDoneTimer->start();
+
+        // Waehrend die Batch-Instanz arbeitet, ist dieses BricsCAD frei; der
+        // Lauf gilt aber erst mit der fertigen PDF als beendet
+        m_status.setPdf(m_publishedPdfPath);
+        m_status.setText(QString("PDF wird in der Batch-Instanz erzeugt (%1 Blaetter)")
+                         .arg(orderedDwgs.size()));
+        m_status.setBricscadFrei(true);
     } else {
         logError("BricsCAD Batch-Instanz konnte nicht gestartet werden");
     }
+}
+
+bool OpenCirtTab::publishProcessAlive() const {
+    return processAlive(m_publishPid);
+}
+
+void OpenCirtTab::endPublishWait() {
+    m_pdfDoneTimer->stop();
+    if (!m_pdfDoneMarkerPath.isEmpty()) QFile::remove(m_pdfDoneMarkerPath);
+    m_pdfDoneMarkerPath.clear();
+    m_publishPid = 0;
+    m_publishGonePolls = 0;
+    m_btnPublish->setText("PDF publizieren");
+    hideProgress();
+    updateButtonStates();
+}
+
+int OpenCirtTab::removeStalePublishLocks() {
+    if (!m_publishStarted.isValid()) return 0;
+    // Nur Sperrdateien aus der Zeit der Batch-Instanz, und nicht die einer
+    // Zeichnung, die in diesem BricsCAD offen ist
+    const QString drawingsDir = projectPath(OpenCirtConfig::ZEICHNUNGEN_DIR);
+    QSet<QString> open;
+    for (const QString& p : openEditorDrawingsUnder(drawingsDir)) {
+        open.insert(pathKey(QFileInfo(p).absolutePath() + "/" + QFileInfo(p).completeBaseName()));
+    }
+    const QDateTime since = m_publishStarted.addSecs(-2);
+    int removed = 0;
+    QDirIterator it(drawingsDir, QStringList() << "*.dwl" << "*.dwl2",
+                    QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString path = it.next();
+        const QFileInfo fi(path);
+        if (fi.lastModified() < since) continue;
+        if (open.contains(pathKey(fi.absolutePath() + "/" + fi.completeBaseName()))) continue;
+        if (QFile::remove(path)) {
+            ++removed;
+            log("  Sperrdatei der Batch-Instanz entfernt: " + QDir::toNativeSeparators(path));
+        }
+    }
+    return removed;
+}
+
+void OpenCirtTab::cancelPublish(const QString& reason) {
+    if (!m_pdfDoneTimer->isActive()) return;
+    m_pdfDoneTimer->stop();
+    m_btnCancel->setText("Wird abgebrochen...");
+    m_btnCancel->setEnabled(false);
+    m_status.setAbbruchAngefordert();
+    log(reason + " - Batch-Instanz wird beendet", "WARN");
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+
+    if (publishProcessAlive()) {
+        terminateProcess(m_publishPid);
+        log(publishProcessAlive()
+            ? QString("Batch-Instanz (Prozess %1) laesst sich nicht beenden").arg(m_publishPid)
+            : QString("Batch-Instanz (Prozess %1) beendet").arg(m_publishPid),
+            publishProcessAlive() ? "ERROR" : "INFO");
+    }
+    // Eine halb geschriebene PDF ist wertlos. BricsCAD schreibt waehrend des
+    // Publish zusaetzlich <Name>.pdf.{GUID}.tmp daneben (V27, 2026-11-06).
+    if (!m_publishedPdfPath.isEmpty()) {
+        const QFileInfo pdf(m_publishedPdfPath);
+        QStringList reste;
+        if (pdf.exists()) reste << pdf.absoluteFilePath();
+        for (const QFileInfo& tmp : QDir(pdf.absolutePath()).entryInfoList(
+                 QStringList() << pdf.fileName() + ".*.tmp", QDir::Files | QDir::Hidden)) {
+            if (m_publishStarted.isValid() && tmp.lastModified() < m_publishStarted.addSecs(-2))
+                continue;
+            reste << tmp.absoluteFilePath();
+        }
+        for (const QString& f : reste) {
+            if (QFile::remove(f)) {
+                log("Unvollstaendige PDF entfernt: " + QDir::toNativeSeparators(f));
+            } else {
+                logError("Unvollstaendige PDF liess sich nicht entfernen: "
+                         + QDir::toNativeSeparators(f));
+            }
+        }
+    }
+    removeStalePublishLocks();
+    m_publishedPdfPath.clear();
+    endPublishWait();
+    const QString line = "PDF publizieren abgebrochen - es wurde keine PDF erzeugt";
+    logError(line);
+    finishStatus("abgebrochen", line);
 }
 
 /**
@@ -5843,8 +6471,29 @@ void OpenCirtTab::onPdfDonePollTimer() {
         m_pdfDoneTimer->stop();
         return;
     }
+
+    // Abbruch von aussen (Datei OpenCirt_abbrechen)
+    if (OcRunStatus::abbruchAngefordert()) {
+        cancelPublish("PDF publizieren: Abbruch von aussen angefordert");
+        return;
+    }
     
     if (!QFile::exists(m_pdfDoneMarkerPath)) {
+        // Batch-Instanz ohne Marker verschwunden (Absturz, von Hand beendet):
+        // sonst wuerde hier endlos gewartet
+        if (m_publishPid > 0 && !publishProcessAlive()) {
+            if (++m_publishGonePolls >= 3) {
+                const bool dialog = interaktiv();
+                removeStalePublishLocks();
+                endPublishWait();
+                const QString line = "PDF-Publish: die Batch-Instanz hat sich ohne Abschluss "
+                                     "beendet - die PDF ist nicht (vollstaendig) erzeugt";
+                logError(line);
+                m_publishedPdfPath.clear();
+                finishStatus("fehler", line);
+                if (dialog) QMessageBox::warning(this, "PDF-Publish", line);
+            }
+        }
         return;  // Still running
     }
     
@@ -5853,31 +6502,27 @@ void OpenCirtTab::onPdfDonePollTimer() {
     QFileInfo pdfInfo(m_publishedPdfPath);
     if (!pdfInfo.exists() || pdfInfo.size() == 0) {
         if (++m_pdfWaitPolls > 45) {  // ~90 Sekunden Gnadenfrist
-            m_pdfDoneTimer->stop();
-            QFile::remove(m_pdfDoneMarkerPath);
-            m_pdfDoneMarkerPath.clear();
-            m_btnPublish->setText("PDF publizieren");
-            m_btnPublish->setEnabled(true);
-            logError("PDF-Publish beendet, aber die Ausgabedatei wurde unter "
-                     "dem vergebenen Pfad nicht gefunden: " + m_publishedPdfPath);
-            QMessageBox::warning(this, "PDF-Publish",
-                "Der Publish-Vorgang wurde beendet, aber die Datei\n"
-                + pdfInfo.fileName() + "\nnicht unter dem vergebenen Speicherort:\n"
-                + pdfInfo.absolutePath() + "\n\n"
-                "gefunden. Bitte pruefen, ob sie an einem anderen Ort liegt.");
+            const bool dialog = interaktiv();
+            endPublishWait();
+            const QString line = "PDF-Publish beendet, aber die Ausgabedatei wurde unter "
+                                 "dem vergebenen Pfad nicht gefunden: " + m_publishedPdfPath;
+            logError(line);
+            finishStatus("fehler", line);
+            if (dialog) {
+                QMessageBox::warning(this, "PDF-Publish",
+                    "Der Publish-Vorgang wurde beendet, aber die Datei\n"
+                    + pdfInfo.fileName() + "\nnicht unter dem vergebenen Speicherort:\n"
+                    + pdfInfo.absolutePath() + "\n\n"
+                    "gefunden. Bitte pruefen, ob sie an einem anderen Ort liegt.");
+            }
             m_publishedPdfPath.clear();
         }
         return;
     }
     
     // === Publish complete! ===
-    m_pdfDoneTimer->stop();
-    QFile::remove(m_pdfDoneMarkerPath);
-    m_pdfDoneMarkerPath.clear();
-    
-    // Restore button
-    m_btnPublish->setText("PDF publizieren");
-    m_btnPublish->setEnabled(true);
+    const bool dialog = interaktiv();
+    endPublishWait();
     
     QString sizeStr;
     qint64 bytes = pdfInfo.size();
@@ -5887,16 +6532,21 @@ void OpenCirtTab::onPdfDonePollTimer() {
         sizeStr = QString("%1 KB").arg(bytes / 1024.0, 0, 'f', 0);
     }
     
-    logSuccess(QString("PDF-Publish abgeschlossen: %1 (%2)").arg(pdfInfo.fileName(), sizeStr));
+    const QString line = QString("PDF-Publish abgeschlossen: %1 (%2)").arg(pdfInfo.fileName(), sizeStr);
+    logSuccess(line);
+    m_status.setPdf(pdfInfo.absoluteFilePath());
+    finishStatus("fertig", line);
     
-    QMessageBox::information(this, "PDF-Publish abgeschlossen",
-        QString("PDF erfolgreich erzeugt:\n\n"
-                "%1\n"
-                "Groesse: %2\n"
-                "Speicherort: %3")
-        .arg(pdfInfo.fileName())
-        .arg(sizeStr)
-        .arg(pdfInfo.absolutePath()));
+    if (dialog) {
+        QMessageBox::information(this, "PDF-Publish abgeschlossen",
+            QString("PDF erfolgreich erzeugt:\n\n"
+                    "%1\n"
+                    "Groesse: %2\n"
+                    "Speicherort: %3")
+            .arg(pdfInfo.fileName())
+            .arg(sizeStr)
+            .arg(pdfInfo.absolutePath()));
+    }
     
     m_publishedPdfPath.clear();
 }
@@ -5936,6 +6586,11 @@ int OpenCirtTab::cleanupLeistungslisten() {
 
 bool OpenCirtTab::precheckLeistungsstempel(const QStringList& dwgFiles, bool doBas) {
     if (findLeistungslisteVorlage().isEmpty()) {
+        if (!interaktiv()) {
+            logError("Die Vorlage OC_VORLAGE_LEISTUNGSLISTE_V*.dwg fehlt in 04- Vorlagen - "
+                     "Auftrag abgebrochen (\"leistungslisten\": false, um ohne Listen zu erstellen)");
+            return false;
+        }
         const QMessageBox::StandardButton answer = QMessageBox::warning(this,
             "Anlagenleistungslisten",
             "Die Vorlage OC_VORLAGE_LEISTUNGSLISTE_V*.dwg fehlt in 04- Vorlagen.\n"
@@ -5991,6 +6646,19 @@ bool OpenCirtTab::precheckLeistungsstempel(const QStringList& dwgFiles, bool doB
         }
     }
     if (groups.isEmpty()) return true;
+
+    if (!interaktiv()) {
+        // Der Auftrag beantwortet die Rueckfrage; ohne Angabe: abbrechen
+        if (m_auftrag->stempelOhneGeraetWeiter) {
+            log(QString("Auftrag: %1 Leistungsstempel ohne sauberes Geraet -> weiter").arg(problems),
+                "WARN");
+            return true;
+        }
+        logError(QString("Auftrag: %1 Leistungsstempel ohne sauberes Geraet -> abbrechen "
+                         "(\"stempel_ohne_geraet\": \"weiter\", um trotzdem zu erstellen)")
+                 .arg(problems));
+        return false;
+    }
 
     return showTreeWarning(this, "Leistungsstempel ohne Geraet",
         QString("%1 Leistungsstempel sind nicht sauber mit einem Geraet verknuepft.\n"

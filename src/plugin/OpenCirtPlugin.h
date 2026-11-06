@@ -13,7 +13,10 @@
     #define ACRX_APIVERSION 19
 #endif
 
-// Platform-specific export macro
+// Platform-specific export macro. Das SDK (brx_importexport.h) definiert
+// BRX_EXPORT unter Linux leer; der Einstiegspunkt muss aber sichtbar sein
+// (CMAKE_CXX_VISIBILITY_PRESET hidden), daher hier ausdruecklich ersetzen.
+#undef BRX_EXPORT
 #ifdef _MSC_VER
     #define BRX_EXPORT __declspec(dllexport)
 #else
