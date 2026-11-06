@@ -111,6 +111,22 @@ void unregisterCommands() {
 
 }  // namespace
 
+#ifndef _WIN32
+// Eigenes, leeres DllMain (nur Linux). Das BRX-SDK (libdrx_entrypoint.a,
+// clientDllMainInit/-Exit) sucht beim Laden und Schliessen des Plugins per
+// dlsym ein "DllMain" im Plugin und ruft es mit ATTACH/DETACH auf - wie unter
+// Windows. Ohne eigenes DllMain findet dlsym das von libbrx27.so; dessen
+// DETACH baut BRX vollstaendig ab (AwObjectManager::onBrxShutdown). Wurde ein
+// Plugin vor einem anderen geschlossen (arxunload, Programmende je nach
+// Ladereihenfolge), stuerzte BricsCAD danach bei jedem BRX-Aufruf ab
+// (06.11.2026, BricsCAD V27.1.05 Linux, mit ocmcp + batchTool + openCirt).
+extern "C" __attribute__((visibility("default")))
+int DllMain(void* /*hInstance*/, unsigned int /*reason*/, void* /*reserved*/)
+{
+    return 1;
+}
+#endif
+
 // ============================================================================
 // BRX Entry Point
 // ============================================================================
