@@ -37,8 +37,10 @@
 #include <memory>
 
 #include "OpenCirtEngine.h"   // OcLlScan (reine Qt-Typen)
+#include "OcAuftrag.h"        // Auftraege von aussen, Laufstatus
 
 QT_BEGIN_NAMESPACE
+class QAbstractNativeEventFilter;
 class QCheckBox;
 class QPushButton;
 class QLabel;
@@ -143,7 +145,7 @@ class OpenCirtTab : public QWidget {
 
 public:
     explicit OpenCirtTab(QWidget* parent = nullptr);
-    ~OpenCirtTab() = default;
+    ~OpenCirtTab() override;
     
     /// Projektordner setzen (Feld oben, Testtreiber, letztes Projekt)
     void setProjectRoot(const QString& root);
@@ -157,6 +159,17 @@ public:
     /// Load/save configuration
     void loadConfig();
     void saveConfig();
+
+    /// Auftrag von aussen (LISP-Funktion opencirt-auftrag, siehe OcAuftrag.h).
+    /// Liest und prueft die Auftragsdatei, uebernimmt Projekt und Optionen ins
+    /// Fenster und startet den Lauf im naechsten Durchgang der
+    /// Ereignisschleife - wie ein Knopfdruck, nicht innerhalb des LISP-Aufrufs.
+    /// Rueckgabe fuer den Aufrufer: "OK: ..." oder "FEHLER: ...".
+    QString acceptAuftrag(const QString& auftragPath);
+
+    /// Laeuft ein Lauf, wartet ein angenommener Auftrag oder erzeugt die
+    /// Batch-Instanz gerade die PDF?
+    bool isBusy() const;
 
 signals:
     /// Zeile fuer das Protokoll des Fensters; type: INFO, SUCCESS, WARNING, ERROR
@@ -184,7 +197,53 @@ private slots:
     /// Seitennamen.csv schreiben
     void onSeitennamenKonfigurieren();
 
+    /// Knopf "Abbrechen": laufenden Lauf nach der aktuellen Zeichnung
+    /// anhalten bzw. die Batch-Instanz des PDF-Publish beenden
+    void onCancelClicked();
+
 private:
+    // ================================================================
+    // Abbrechen, Auftraege, Laufstatus
+    // ================================================================
+
+    /// Ausnahme, mit der ein abgebrochener Lauf aus seinen Schleifen
+    /// herausspringt. Geworfen wird nur zwischen zwei Zeichnungen (in
+    /// stepDone, beginPhase, showProgress), gefangen in den Knopf-Handlern.
+    struct RunCancelled {};
+
+    /// Abbruch angefordert (Knopf oder Datei OpenCirt_abbrechen)?
+    bool cancelRequested();
+    /// Im Lauf: bei Abbruch-Anforderung RunCancelled werfen
+    void checkCancel();
+    /// Ereignisse verarbeiten: im Lauf alle (der Eingabe-Filter laesst nur
+    /// den Abbrechen-Knopf und offene Rueckfragen durch), sonst ohne Eingaben
+    void processRunEvents();
+    /// Abgebrochenen Lauf melden: Protokoll, Status, bei Knopf-Laeufen Dialog
+    void reportCancelled(const QString& title, const QString& stand);
+
+    /// Ohne Auftrag: Dialoge zeigen. Mit Auftrag beantwortet dieser die Fragen.
+    bool interaktiv() const { return !m_auftrag; }
+    /// Angenommenen Auftrag ausfuehren (aus der Ereignisschleife)
+    void runAuftrag();
+    /// Status im naechsten Durchgang der Ereignisschleife abschliessen, sofern
+    /// kein Lauf mehr laeuft und kein PDF-Publish wartet
+    void scheduleStatusFinish();
+    /// Status abschliessen und den Auftrag vergessen
+    void finishStatus(const QString& zustand, const QString& ergebnis = QString());
+
+    /// PDF-Publish in der Batch-Instanz abbrechen: Prozess beenden,
+    /// Markerdatei, halbe PDF und liegengebliebene Sperrdateien entfernen
+    void cancelPublish(const QString& reason);
+    /// Laeuft die Batch-Instanz des PDF-Publish noch?
+    bool publishProcessAlive() const;
+    /// Warten auf die Batch-Instanz anzeigen: Knopftext, Balken, Abbrechen
+    void showPublishWaiting();
+    /// Warten auf die Batch-Instanz beenden: Timer, Marker, Knoepfe
+    void endPublishWait();
+    /// Sperrdateien (*.dwl, *.dwl2), die eine abgebrochene Batch-Instanz im
+    /// Zeichnungsordner liegen liess. Rueckgabe: Anzahl entfernter Dateien.
+    int removeStalePublishLocks();
+
     void setupUi();
     /// Schaltflaechen sperren, solange kein Projekt gewaehlt ist oder ein
     /// Lauf laeuft
@@ -236,8 +295,10 @@ private:
     /// dann die Liste
     bool checkNoOpenDrawings(const QString& title);
 
-    /// Lauf beginnen: Schaltflaechen sperren, Fortschritt zeigen
-    void beginRun(QPushButton* button, const QString& busyText);
+    /// Lauf beginnen: Schaltflaechen sperren, Fortschritt und Abbrechen-Knopf
+    /// zeigen, Eingaben ausserhalb sperren, Laufstatus beginnen (aktion:
+    /// "erstellen", "aufbauen", "sensorliste", "pdf")
+    void beginRun(QPushButton* button, const QString& busyText, const QString& aktion);
     /// Neuer Abschnitt des Laufs mit eigener Zaehlung
     void beginPhase(const QString& label, int total);
     /// Eine Zeichnung des Abschnitts ist fertig
@@ -517,6 +578,7 @@ private:
     QCheckBox* m_chkIncludeLl = nullptr;   ///< Anlagenleistungslisten
     
     QProgressBar* m_progressBar;
+    QPushButton* m_btnCancel = nullptr;     ///< "Abbrechen", nur waehrend eines Laufs sichtbar
     
     // ================================================================
     // State
@@ -564,6 +626,37 @@ private:
     QString m_pdfDoneMarkerPath;        ///< Path to completion marker written by SCR
     QString m_publishedPdfPath;         ///< Vergebene Ausgabe-PDF (steht in der DSD, wird ueberwacht)
     int m_pdfWaitPolls = 0;             ///< geduldete Polls, bis die Datei auf der Platte liegt
+    qint64 m_publishPid = 0;            ///< Prozess der Batch-Instanz
+    QDateTime m_publishStarted;         ///< Start der Batch-Instanz (fuer Sperrdateien)
+    int m_publishGonePolls = 0;         ///< Polls, seit die Batch-Instanz ohne Marker weg ist
+
+    // Abbrechen
+    bool m_cancelRequested = false;     ///< Knopf gedrueckt oder Datei OpenCirt_abbrechen
+    QObject* m_inputBlocker = nullptr;  ///< Eingabe-Filter waehrend eines Laufs
+    QAbstractNativeEventFilter* m_nativeBlocker = nullptr;  ///< Windows: Eingaben an BricsCAD
+
+    // Auftrag von aussen und Laufstatus
+    std::unique_ptr<OcAuftrag> m_auftrag;   ///< aktiver Auftrag, sonst Knopf
+    OcRunStatus m_status;
+    bool m_finishScheduled = false;
+    int m_handlerDepth = 0;         ///< Knopf-Handler laeuft (auch mit offenem Dialog)
+    bool m_publishPreparing = false; ///< PDF publizieren: vom Klick bis zum Start der Batch-Instanz
+
+    /// Fuer die Dauer eines Knopf-Handlers: openCirt gilt als beschaeftigt
+    /// (kein Auftrag von aussen, solange z. B. ein Dialog offen ist). Am Ende
+    /// Knoepfe neu setzen und den Laufstatus abschliessen, falls fertig.
+    struct HandlerScope {
+        explicit HandlerScope(OpenCirtTab* tab) : t(tab) { ++t->m_handlerDepth; }
+        ~HandlerScope() {
+            if (--t->m_handlerDepth > 0) return;
+            t->m_publishPreparing = false;
+            t->updateButtonStates();
+            t->scheduleStatusFinish();
+        }
+        HandlerScope(const HandlerScope&) = delete;
+        HandlerScope& operator=(const HandlerScope&) = delete;
+        OpenCirtTab* t;
+    };
 
 };
 

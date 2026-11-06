@@ -1309,6 +1309,22 @@ ProjectBuilder::Result ProjectBuilder::runReal()
     const int total = m_plan.size();
     for (int i = 0; i < total; ++i) {
         emit progress(i + 1, total, QFileInfo(m_plan.at(i).dstPath).fileName());
+        // Abbruch durch den Anwender: zwischen zwei Zeichnungen anhalten
+        if (m_cancelCheck && m_cancelCheck()) {
+            result.cancelled = true;
+            result.done = i;
+            result.warnings = m_errCount;
+            log(QString());
+            log(QString::fromLatin1(kRuler));
+            log(QStringLiteral("*** ABBRUCH durch Benutzer nach %1 von %2 Zeichnung(en) ***")
+                .arg(i).arg(total));
+            log(QStringLiteral("Bisher erzeugte Zeichnungen bleiben erhalten, der Aufbau ist "
+                               "unvollstaendig. Kein Sweep."));
+            log(QStringLiteral("Fehler/Warnungen bis hierhin: %1").arg(m_errCount));
+            log(QString::fromLatin1(kRuler));
+            closeLog();
+            return result;
+        }
         if (!executeEntry(m_plan.at(i), result)) {
             // Abbruch wegen fehlendem Stempel, Log ist bereits geschlossen
             result.warnings = m_errCount;
