@@ -20,6 +20,18 @@
  *     { "aktion": "pdf", "projekt": "<Projektordner>",
  *       "ziel": "<Ordner>/<Name>.pdf", "ersetzen": false }
  *
+ * Listen (seit 2.6.0), wie die Knoepfe "IO-Liste erstellen", "Sensorliste
+ * erstellen" und "Export Testdaten"; sie lesen die Zeichnungen nur:
+ *
+ *     { "aktion": "io_liste", "projekt": "<Projektordner>",
+ *       "filter": "HW" }          ("" = alle Datenpunkte, "HW" = IO-Belegung,
+ *                                  "BUS;SMI" = mehrere Integrationsarten)
+ *
+ *     { "aktion": "sensorliste", "projekt": "<Projektordner>" }
+ *
+ *     { "aktion": "testdaten", "projekt": "<Projektordner>",
+ *       "geoeffnete_blaetter": "abbrechen" }   (optional, oder "weiter")
+ *
  * Waehrend eines Laufs - per Auftrag oder per Knopf - steht der Stand in
  * <Temp>/OpenCirt_status.json, das Protokoll in <Temp>/OpenCirt_protokoll.txt.
  * Andere Programme lesen beides, ohne BricsCAD zu stoeren. Liegt die Datei
@@ -47,7 +59,7 @@ namespace BatchProcessing {
 
 struct OcAuftrag {
     QString id;                 ///< Kennung des Aufrufers, sonst Zeitstempel
-    QString aktion;             ///< "erstellen" oder "pdf"
+    QString aktion;             ///< "erstellen", "pdf", "io_liste", "sensorliste", "testdaten"
     QString projekt;            ///< Projektordner (Schreibweise mit /)
 
     // aktion "erstellen"
@@ -60,6 +72,20 @@ struct OcAuftrag {
     // aktion "pdf"
     QString ziel;               ///< vollstaendiger Pfad der PDF (mit /)
     bool ersetzen = false;      ///< vorhandene PDF ersetzen
+
+    // aktion "io_liste": Integrationsart(en) wie im Filterdialog,
+    // leer = alle Datenpunkte
+    QString filter;
+
+    // aktion "testdaten": GA-FL-Blaetter in BricsCAD geoeffnet -> trotzdem
+    // den gespeicherten Stand exportieren? Sonst Abbruch.
+    bool geoeffneteBlaetterWeiter = false;
+
+    /// Listen-Auftrag (io_liste, sensorliste, testdaten): liest die
+    /// Zeichnungen nur und aendert sie nicht
+    bool istListe() const {
+        return aktion == "io_liste" || aktion == "sensorliste" || aktion == "testdaten";
+    }
 
     /// Auftragsdatei lesen und pruefen. Unbekannte Schluessel gelten als
     /// Fehler, damit ein Tippfehler nicht still eine Vorgabe ausloest.
@@ -112,6 +138,8 @@ public:
     void setAbbruchAngefordert();
     void setZaehler(const QString& name, int wert);
     void setPdf(const QString& path);
+    /// Erzeugte Datei bzw. erzeugter Ordner einer Liste (seit 2.6.0)
+    void setAusgabe(const QString& path);
 
     /// Lauf beenden: zustand "fertig", "fehler" oder "abgebrochen".
     /// ergebnis leer: die letzte Ergebniszeile (SUCCESS/ERROR) des Laufs.
@@ -140,6 +168,7 @@ private:
     bool m_abbruch = false;
     QJsonObject m_zaehler;
     QString m_pdf;
+    QString m_ausgabe;
     QString m_ergebnis;
     int m_fehlerzeilen = 0;
     QStringList m_letzteMeldungen;

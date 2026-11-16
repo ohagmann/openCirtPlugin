@@ -560,7 +560,20 @@ Die Auftragsdatei ist JSON, z. B.
 
 openCirt übernimmt Projekt und Haken sichtbar ins Fenster und startet den Lauf wie nach einem Klick. Rückfragen beantwortet der Auftrag (`fehlende_referenzen`, `stempel_ohne_geraet`: `"weiter"` oder `"abbrechen"`, ohne Angabe gilt `abbrechen`); die Optionen und das PDF-Ziel haben keine Vorgabe und müssen genannt werden. Der Aufruf kehrt sofort mit `OK: …` oder `FEHLER: …` zurück; abgelehnt wird, solange ein Lauf läuft oder ein Dialog von openCirt offen ist, wenn Zeichnungen des Projekts geöffnet sind oder die PDF schon existiert und `ersetzen` nicht `true` ist.
 
-Während jedes Laufs – per Knopf oder Auftrag – stehen Stand und Protokoll im Temp-Ordner: `OpenCirt_status.json` (Aktion, Zustand `laeuft`/`fertig`/`fehler`/`abgebrochen`, Abschnitt mit „Schritt von Anzahl", Zähler, Ergebnis) und `OpenCirt_protokoll.txt`. Eine leere Datei `OpenCirt_abbrechen` im Temp-Ordner wirkt wie ein Klick auf „Abbrechen".
+Seit 2.6.0 gehen auch die Listen als Auftrag – wie die Knöpfe „IO-Liste erstellen", „Sensorliste erstellen" und „Export Testdaten", ohne Dialoge und Meldungsfenster:
+
+    { "aktion": "io_liste", "projekt": "<Projektordner>", "filter": "HW" }
+
+    { "aktion": "sensorliste", "projekt": "<Projektordner>" }
+
+    { "aktion": "testdaten", "projekt": "<Projektordner>",
+      "geoeffnete_blaetter": "abbrechen" }
+
+- `filter` ersetzt den Filterdialog der IO-Liste und muss immer angegeben werden: `""` = alle Datenpunkte (`Datenpunktliste.csv`), `"HW"` = Hardware mit Modul-/Kanalbelegung (`IO-Belegungsliste.csv`), mehrere Integrationsarten semikolongetrennt, z. B. `"BUS;SMI"` (`Datenpunktliste_BUS-SMI.csv`). Der Filter, den sich der Knopf merkt, bleibt unverändert.
+- `geoeffnete_blaetter` beantwortet die Rückfrage von „Export Testdaten", wenn GA-FL-Blätter in BricsCAD offen sind: `"weiter"` exportiert den gespeicherten Stand, ohne Angabe gilt `abbrechen`.
+- Die Listen lesen die Zeichnungen nur. Geöffnete Zeichnungen des Projekts führen deshalb nicht zur Ablehnung; gelesen wird der gespeicherte Stand. Eine vorhandene Liste gleichen Namens in `06- Plot` wird ersetzt, die Testdaten bekommen immer einen neuen Ordner.
+
+Während jedes Laufs – per Knopf oder Auftrag – stehen Stand und Protokoll im Temp-Ordner: `OpenCirt_status.json` (Aktion, Zustand `laeuft`/`fertig`/`fehler`/`abgebrochen`, Abschnitt mit „Schritt von Anzahl", Zähler, Ergebnis, bei Listen-Aufträgen unter `ausgabe` die erzeugte Datei bzw. der Ordner der Testdaten) und `OpenCirt_protokoll.txt`. Eine leere Datei `OpenCirt_abbrechen` im Temp-Ordner wirkt wie ein Klick auf „Abbrechen".
 
 ### Export Testdaten
 

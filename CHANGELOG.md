@@ -5,6 +5,26 @@ Alle wesentlichen Änderungen am openCirt-Plugin werden in dieser Datei dokument
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei reinen Änderungen an Vorlagen, LISP-Skripten, Dokumentation oder Repo-Konfiguration.
 
+## [2.6.0] - 2026-11-16
+
+### Added
+- **Listen als Auftrag von außen.** `(opencirt-auftrag …)` kennt drei weitere Aktionen, die dasselbe tun wie die Knöpfe – ohne Dialoge und Meldungsfenster, das Ergebnis steht im Protokoll und in `OpenCirt_status.json`:
+  - `io_liste` wie „IO-Liste erstellen“. `filter` ersetzt den Filterdialog und ist Pflicht: `""` = alle Datenpunkte (`Datenpunktliste.csv`), `"HW"` = Hardware mit Modul-/Kanalbelegung (`IO-Belegungsliste.csv`), mehrere Integrationsarten semikolongetrennt (z. B. `"BUS;SMI"` → `Datenpunktliste_BUS-SMI.csv`). Der Filter, den sich der Knopf merkt, bleibt unverändert.
+  - `sensorliste` wie „Sensorliste erstellen“ (`Sensorliste.csv`).
+  - `testdaten` wie „Export Testdaten“. Sind GA-FL-Blätter in BricsCAD offen, beantwortet `geoeffnete_blaetter` (`"weiter"` oder `"abbrechen"`, ohne Angabe `abbrechen`) die Rückfrage.
+  - Die Listen lesen die Zeichnungen nur; anders als „erstellen“ und „pdf“ lehnt openCirt sie deshalb nicht ab, wenn Zeichnungen des Projekts geöffnet sind (gelesen wird der gespeicherte Stand, wie bei den Knöpfen).
+- `OpenCirt_status.json` hat das Feld `ausgabe`: die erzeugte Liste bzw. der Ordner der Testdaten. Dazu Zähler je Liste (IO-Liste: Zeilen, Datenpunktzeilen, Reservekanäle, Datenpunkte nach Filter/gesamt, mit Kanal; Sensorliste: Sensoren, Datenpunkte; Testdaten: Blätter gefunden/exportiert, Datenpunkte) und bei IO-Liste und Testdaten der Fortschritt „GA-FL lesen: n von N“.
+
+### Changed
+- IO-Liste: Die Warnung „Datenpunkt(e) mit Referenzwert > 1“ steht im Protokoll jetzt vor der Ergebniszeile. So meldet ein Auftrag `fertig` (die Liste ist geschrieben) und zählt die Warnzeilen als Fehlerzeilen, statt den Lauf als `fehler` abzuschließen. Die Meldungsfenster beim Knopf sind unverändert.
+- Findet die IO-Liste keinen Datenpunkt zum Filter, nennt die Fehlerzeile den Filter; die Zeile davor listet die Integrationsarten im Projekt.
+
+### Geprüft (Linux, BricsCAD V27, eigene Testinstanz)
+- Projekt mit 1959 Zeichnungen und 858 GA-FL-Blättern: `io_liste` mit `"HW"` (2024 Zeilen inkl. 227 Reservekanälen, ~20 s), `""` (5611 Zeilen), `"BUS;SMI"`, einem Filter ohne Treffer (Fehler mit Liste der Integrationsarten); `testdaten` (858 Blätter, neuer Ordner je Lauf), mit geöffnetem GA-FL-Blatt ohne Angabe abgelehnt, mit `"weiter"` exportiert. Auftrag mit `"HW"` und Knopf mit Filter `HW` erzeugen byte-gleiche Dateien; beim Knopf erscheinen Filterdialog und Meldungen wie bisher.
+- `sensorliste` an einem Projekt mit 680 Zeichnungen (9 Fühler, 4 s); ohne gepflegtes `OC_PRODUKT` meldet sie „Keine Sensoren gefunden“ (wie der Knopf).
+- Beispielprojekt ohne GA-FL-Blätter: `io_liste` und `testdaten` enden mit Fehler „Keine GA-FL-Blaetter“. Unbekannte Schlüssel, fehlender `filter` und unbekannte Aktionen werden abgelehnt. Während eines Knopf-Laufs werden Aufträge abgelehnt.
+- Beobachtet, nicht neu in 2.6.0: Jeder Durchlauf über alle GA-FL-Blätter (Side-Database) lässt den Speicher von BricsCAD um rund 150 MB wachsen (11 Läufe hintereinander ohne Absturz). Einmal stürzte die Testinstanz nach etwa 30 Listen-Läufen mitten in einer IO-Liste ohne Absturzbericht ab; nachgestellt (gleiche Reihenfolge, zehn Läufe am Stück) trat das nicht wieder auf.
+
 ## [2.5.0] - 2026-11-06
 
 ### Added

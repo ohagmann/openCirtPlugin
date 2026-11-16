@@ -1008,9 +1008,12 @@ QString OpenCirtTab::acceptAuftrag(const QString& auftragPath) {
         return "FEHLER: " + error;
     }
 
-    // Offene Zeichnungen des Projekts: gleich ablehnen statt erst im Lauf
-    const QStringList open = openEditorDrawingsUnder(
-        auftrag->projekt + "/" + OpenCirtConfig::ZEICHNUNGEN_DIR);
+    // Offene Zeichnungen des Projekts: gleich ablehnen statt erst im Lauf.
+    // Listen lesen nur den gespeicherten Stand und duerfen das wie die Knoepfe
+    // (Export Testdaten beantwortet die Rueckfrage mit "geoeffnete_blaetter").
+    const QStringList open = auftrag->istListe()
+        ? QStringList()
+        : openEditorDrawingsUnder(auftrag->projekt + "/" + OpenCirtConfig::ZEICHNUNGEN_DIR);
     if (!open.isEmpty()) {
         return QString("FEHLER: %1 Zeichnung(en) des Projekts sind in BricsCAD geoeffnet "
                        "(z. B. %2) - bitte schliessen")
@@ -1053,6 +1056,12 @@ void OpenCirtTab::runAuftrag() {
         onFullProjectGenerate();
     } else if (m_auftrag->aktion == "pdf") {
         onPublishPdf();
+    } else if (m_auftrag->aktion == "io_liste") {
+        onDatenpunktExport();
+    } else if (m_auftrag->aktion == "sensorliste") {
+        onSensorListeGenerate();
+    } else if (m_auftrag->aktion == "testdaten") {
+        onTestdatenExport();
     }
     // Lauf gar nicht erst begonnen (z. B. Projektstruktur unvollstaendig)
     // oder schon fertig: Status abschliessen
@@ -2240,12 +2249,19 @@ void OpenCirtTab::onSensorListeGenerate() {
 
     if (!extracted) return;
     if (!unreadable.isEmpty()) {
+        // Auftrag: die Zeichnungen ins Protokoll; die Ergebniszeile danach
+        // bestimmt den Laufstatus
+        if (!interaktiv()) {
+            for (const QString& f : unreadable) log("  nicht lesbar: " + f, "ERROR");
+        }
         logError(QString("Sensorliste nicht erstellt: %1 Zeichnung(en) nicht lesbar")
                  .arg(unreadable.size()));
-        showListWarning(this, "Sensorliste",
-            "Diese Zeichnungen liessen sich nicht lesen:",
-            unreadable,
-            "Die Sensorliste waere unvollstaendig und wurde nicht erstellt.");
+        if (interaktiv()) {
+            showListWarning(this, "Sensorliste",
+                "Diese Zeichnungen liessen sich nicht lesen:",
+                unreadable,
+                "Die Sensorliste waere unvollstaendig und wurde nicht erstellt.");
+        }
         return;
     }
     if (drawings.isEmpty()) {
@@ -2308,11 +2324,15 @@ void OpenCirtTab::onSensorListeGenerate() {
         .arg(sensors.size()).arg(totalDp));
 
     if (sensors.isEmpty()) {
-        logError("Keine Sensoren gefunden! Keywords in sensor.csv pruefen.");
-        QMessageBox::information(this, "Sensorliste",
-            QString("Keine Datenpunkte matched die Keywords aus sensor.csv.\n\n"
-                    "Geprueft: %1 Datenpunkte mit %2 Keywords.")
-            .arg(totalDp).arg(keywords.keywordCount()));
+        logError(QString("Keine Sensoren gefunden! Keywords in sensor.csv pruefen "
+                         "(geprueft: %1 Datenpunkte mit %2 Keywords).")
+                 .arg(totalDp).arg(keywords.keywordCount()));
+        if (interaktiv()) {
+            QMessageBox::information(this, "Sensorliste",
+                QString("Keine Datenpunkte matched die Keywords aus sensor.csv.\n\n"
+                        "Geprueft: %1 Datenpunkte mit %2 Keywords.")
+                .arg(totalDp).arg(keywords.keywordCount()));
+        }
         return;
     }
 
@@ -2355,9 +2375,13 @@ void OpenCirtTab::onSensorListeGenerate() {
         return;
     }
 
+    m_status.setZaehler("sensoren", sensors.size());
+    m_status.setZaehler("datenpunkte", totalDp);
+    m_status.setAusgabe(outputPath);
     logSuccess(QString("Sensorliste erstellt: %1 Eintraege -> %2")
-               .arg(sensors.size()).arg(outputPath));
+               .arg(sensors.size()).arg(QDir::toNativeSeparators(outputPath)));
 
+    if (!interaktiv()) return;
     QMessageBox::information(this, "Sensorliste",
         QString("Sensorliste erfolgreich erstellt!\n\n"
                 "%1 Sensoren aus %2 Datenpunkten\n\n"
@@ -2493,9 +2517,12 @@ void OpenCirtTab::onDatenpunktExport() {
     HandlerScope scope(this);
     if (!requireProjectStructure()) return;
 
-    // --- 0. Filterdialog ---
+    // --- 0. Filterdialog; ein Auftrag nennt den Filter selbst ---
     QString filterText;
-    {
+    if (!interaktiv()) {
+        // Der gemerkte Filter des Knopfs (m_dpExportFilter) bleibt unberuehrt
+        filterText = m_auftrag->filter;
+    } else {
         QDialog dlg(this);
         dlg.setWindowTitle("Datenpunkte exportieren");
 
@@ -2537,9 +2564,8 @@ void OpenCirtTab::onDatenpunktExport() {
 
         if (dlg.exec() != QDialog::Accepted) return;
         filterText = edit->text().trimmed();
+        m_dpExportFilter = filterText;
     }
-
-    m_dpExportFilter = filterText;
 
     // Filterliste normalisieren (Grossschreibung, ohne Leereintraege)
     QStringList filterList;
@@ -2681,6 +2707,8 @@ void OpenCirtTab::onDatenpunktExport() {
         if (++sheetNr % 20 == 0) {
             showProgress(QString("GA-FL lesen: %1 von %2 Blaettern")
                          .arg(sheetNr).arg(gaFlFiles.size()));
+            m_status.setPhase("GA-FL lesen", sheetNr, gaFlFiles.size(),
+                              QFileInfo(sheetPath).fileName());
         }
 
         SheetAttributes sa = readSheetAttributes(
@@ -2811,7 +2839,10 @@ void OpenCirtTab::onDatenpunktExport() {
     }
 
     if (totalRows == 0) {
-        logError("Keine Datenpunkte nach Filter uebrig!");
+        logError(QString("Keine Datenpunkte nach Filter '%1' uebrig - im Projekt vorhandene "
+                         "Integrationsarten siehe Zeile davor")
+                 .arg(filterText.isEmpty() ? QStringLiteral("(leer)") : filterText));
+        if (!interaktiv()) return;
         QStringList verteilung;
         for (auto it = integCounts.constBegin(); it != integCounts.constEnd(); ++it) {
             verteilung << QString("  %1: %2 Datenpunkte").arg(it.key()).arg(it.value());
@@ -3022,17 +3053,30 @@ void OpenCirtTab::onDatenpunktExport() {
     const int zeilenInDatei = pos - 1;
     const int reserveZeilen = zeilenInDatei - totalRows;
 
-    logSuccess(QString("Datenpunkt-Export erstellt: %1 Zeilen "
-                       "(%2 Datenpunktzeilen + %3 Reservekanaele) -> %4%5")
-               .arg(zeilenInDatei).arg(totalRows).arg(reserveZeilen)
-               .arg(outputPath).arg(summary));
-
-    // Warnung bei Referenzwerten > 1
+    // Warnung bei Referenzwerten > 1 - vor der Ergebniszeile, damit ein
+    // Auftrag "fertig" meldet (die Liste ist geschrieben) und die Fehlerzeilen
+    // im Protokoll zaehlen
     if (!mehrfachBelegung.isEmpty()) {
         logError(QString("%1 Datenpunkt(e) mit Referenzwert > 1 gefunden")
                  .arg(mehrfachBelegung.size()));
         for (const QString& m : mehrfachBelegung) logError("  " + m);
+    }
 
+    m_status.setZaehler("zeilen", zeilenInDatei);
+    m_status.setZaehler("datenpunktzeilen", totalRows);
+    m_status.setZaehler("reservekanaele", reserveZeilen);
+    m_status.setZaehler("datenpunkte_nach_filter", matchedDp);
+    m_status.setZaehler("datenpunkte_gesamt", totalDp);
+    m_status.setZaehler("mit_kanal", totalIo);
+    m_status.setAusgabe(outputPath);
+    logSuccess(QString("Datenpunkt-Export erstellt: %1 Zeilen "
+                       "(%2 Datenpunktzeilen + %3 Reservekanaele) -> %4%5")
+               .arg(zeilenInDatei).arg(totalRows).arg(reserveZeilen)
+               .arg(QDir::toNativeSeparators(outputPath)).arg(summary));
+
+    if (!interaktiv()) return;
+
+    if (!mehrfachBelegung.isEmpty()) {
         showListWarning(this, "Datenpunkte exportieren",
                         "Achtung: Es wurden IOs mit Eintraegen > 1 gefunden.\n\n"
                         "Ein Datenpunkt traegt genau ein AKS/BAS und belegt daher "
@@ -3212,7 +3256,18 @@ void OpenCirtTab::onTestdatenExport() {
         if (QFileInfo(path).fileName().contains(QLatin1String("_GA_FL_"), Qt::CaseInsensitive))
             openSheets << drawingsRoot.relativeFilePath(path);
     }
-    if (!openSheets.isEmpty()) {
+    if (!openSheets.isEmpty() && !interaktiv()) {
+        // Der Auftrag beantwortet die Rueckfrage; ohne Angabe: abbrechen
+        for (const QString& f : openSheets.mid(0, 10)) log("  geoeffnet: " + f, "WARN");
+        if (!m_auftrag->geoeffneteBlaetterWeiter) {
+            logError(QString("Export Testdaten abgebrochen: %1 GA-FL-Blatt/Blaetter in BricsCAD "
+                             "geoeffnet (\"geoeffnete_blaetter\": \"weiter\" exportiert den "
+                             "gespeicherten Stand)").arg(openSheets.size()));
+            return;
+        }
+        log(QString("Auftrag: %1 GA-FL-Blatt/Blaetter geoeffnet -> weiter, exportiert wird "
+                    "der gespeicherte Stand").arg(openSheets.size()), "WARN");
+    } else if (!openSheets.isEmpty()) {
         const auto answer = QMessageBox::question(this, title,
             QString("%1 GA-FL-Blatt/Blaetter sind in BricsCAD geoeffnet:\n\n%2\n\n"
                     "Exportiert wird der gespeicherte Stand. Ungespeicherte "
@@ -3253,6 +3308,8 @@ void OpenCirtTab::onTestdatenExport() {
         if (++sheetNr % 20 == 0) {
             showProgress(QString("GA-FL lesen: %1 von %2 Blaettern")
                          .arg(sheetNr).arg(gaFlFiles.size()));
+            m_status.setPhase("GA-FL lesen", sheetNr, gaFlFiles.size(),
+                              QFileInfo(sheetPath).fileName());
         }
         const QString rel = drawingsRoot.relativeFilePath(sheetPath);
         const SheetAttributes sa = readSheetAttributes(
@@ -3333,12 +3390,17 @@ void OpenCirtTab::onTestdatenExport() {
     for (const QString& f : writeErrors)  problems << "nicht geschrieben: " + f;
     for (const QString& p : problems) logError("  " + p);
 
+    m_status.setZaehler("blaetter_gefunden", gaFlFiles.size());
+    m_status.setZaehler("blaetter_exportiert", exported);
+    m_status.setZaehler("datenpunkte", totalDps);
+    m_status.setAusgabe(runDir);
     const QString result = QString("Testdaten exportiert: %1 von %2 GA-FL-Blaettern, "
                                    "%3 Datenpunkte -> %4")
         .arg(exported).arg(gaFlFiles.size()).arg(totalDps)
         .arg(QDir::toNativeSeparators(jsonDir));
     if (problems.isEmpty()) logSuccess(result);
     else logError(result);
+    if (!interaktiv()) return;
 
     const QString hint =
         QString("Pruefung: oc_audit_gafl.py in '%1/00- Engine' starten, "

@@ -85,10 +85,18 @@ bool OcAuftrag::fromFile(const QString& path, OcAuftrag& out, QString& error) {
                      "fehlende_referenzen", "stempel_ohne_geraet" };
     } else if (out.aktion == "pdf") {
         erlaubt += { "ziel", "ersetzen" };
+    } else if (out.aktion == "io_liste") {
+        erlaubt.insert("filter");
+    } else if (out.aktion == "sensorliste") {
+        // nur Projekt
+    } else if (out.aktion == "testdaten") {
+        erlaubt.insert("geoeffnete_blaetter");
     } else {
+        const QString aktionen =
+            "\"erstellen\", \"pdf\", \"io_liste\", \"sensorliste\" oder \"testdaten\"";
         error = out.aktion.isEmpty()
-            ? QString("\"aktion\" fehlt (\"erstellen\" oder \"pdf\")")
-            : QString("Unbekannte aktion \"%1\" (\"erstellen\" oder \"pdf\")").arg(out.aktion);
+            ? QString("\"aktion\" fehlt (%1)").arg(aktionen)
+            : QString("Unbekannte aktion \"%1\" (%2)").arg(out.aktion, aktionen);
         return false;
     }
     for (auto it = o.constBegin(); it != o.constEnd(); ++it) {
@@ -122,6 +130,22 @@ bool OcAuftrag::fromFile(const QString& path, OcAuftrag& out, QString& error) {
         if (!readBool(o, "leistungslisten", out.leistungslisten, error)) return false;
         if (!readAntwort(o, "fehlende_referenzen", out.fehlendeReferenzenWeiter, error)) return false;
         if (!readAntwort(o, "stempel_ohne_geraet", out.stempelOhneGeraetWeiter, error)) return false;
+    } else if (out.aktion == "io_liste") {
+        // Pflicht, damit nie still eine Vorgabe greift; "" = alle Datenpunkte
+        if (!o.contains("filter")) {
+            error = "\"filter\" fehlt (\"\" = alle Datenpunkte, \"HW\" = IO-Belegung, "
+                    "\"BUS;SMI\" = mehrere Integrationsarten)";
+            return false;
+        }
+        if (!o.value("filter").isString()) {
+            error = "\"filter\" muss ein Text sein (z. B. \"HW\" oder \"\")";
+            return false;
+        }
+        out.filter = o.value("filter").toString().trimmed();
+    } else if (out.aktion == "sensorliste") {
+        // keine Optionen
+    } else if (out.aktion == "testdaten") {
+        if (!readAntwort(o, "geoeffnete_blaetter", out.geoeffneteBlaetterWeiter, error)) return false;
     } else {
         const QString ziel = o.value("ziel").toString().trimmed();
         if (ziel.isEmpty()) {
@@ -157,6 +181,17 @@ QString OcAuftrag::beschreibung() const {
         if (leistungslisten) teile << "Leistungslisten";
         return QString("Projekt erstellen (%1)")
                .arg(teile.isEmpty() ? QString("ohne BMK/BAS/Leistungslisten") : teile.join(", "));
+    }
+    if (aktion == "io_liste") {
+        return QString("IO-Liste erstellen (Filter %1)")
+               .arg(filter.isEmpty() ? QString("leer = alle Datenpunkte") : filter);
+    }
+    if (aktion == "sensorliste") {
+        return QString("Sensorliste erstellen");
+    }
+    if (aktion == "testdaten") {
+        return QString("Export Testdaten%1")
+               .arg(geoeffneteBlaetterWeiter ? " (geoeffnete Blaetter: weiter)" : "");
     }
     return QString("PDF publizieren nach %1%2")
            .arg(QDir::toNativeSeparators(ziel), ersetzen ? " (ersetzen)" : "");
@@ -200,6 +235,7 @@ void OcRunStatus::begin(const QString& aktion, const QString& quelle,
     m_abbruch = false;
     m_zaehler = QJsonObject();
     m_pdf.clear();
+    m_ausgabe.clear();
     m_ergebnis.clear();
     m_fehlerzeilen = 0;
     m_letzteMeldungen.clear();
@@ -299,6 +335,12 @@ void OcRunStatus::setPdf(const QString& path) {
     write(false);
 }
 
+void OcRunStatus::setAusgabe(const QString& path) {
+    if (!m_active) return;
+    m_ausgabe = QDir::toNativeSeparators(path);
+    write(false);
+}
+
 void OcRunStatus::finish(const QString& zustand, const QString& ergebnis) {
     if (!m_active) return;
     m_zustand = zustand;
@@ -348,6 +390,7 @@ void OcRunStatus::write(bool force) {
     o["datei"] = m_datei;
     o["zaehler"] = m_zaehler;
     o["pdf"] = m_pdf;
+    o["ausgabe"] = m_ausgabe;
     o["ergebnis"] = m_ergebnis;
     o["fehlerzeilen"] = m_fehlerzeilen;
     o["letzte_fehler"] = QJsonArray::fromStringList(m_letzteFehler);
