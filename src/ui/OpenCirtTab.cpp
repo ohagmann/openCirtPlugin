@@ -6436,12 +6436,26 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs,
     log(QString("  /b \"%1\" \"%2\"").arg(dwgPathWin, scrPathWin));
     log(QString("  SCR: FILEDIA=0 -> -PUBLISH -> Marker -> _.QUIT"));
     log(QString("  PDF-Ausgabe: %1").arg(m_publishedPdfPath));
+
+    // Arbeitsverzeichnis der Batch-Instanz: der Vorlagenordner des Projekts.
+    // Die Blaetter sind Kopien der Vorlagen und tragen deren relative
+    // Xref-Pfade (z. B. "../../../03- Auftraege/.../Topologie.dwg" oder
+    // "./01- Projektvorlagen/..."), die vom Ordner des Blatts aus nicht mehr
+    // stimmen. BricsCAD sucht einen solchen Pfad dann auch vom
+    // Arbeitsverzeichnis des Programms aus. Bisher erbte die Batch-Instanz es
+    // vom BricsCAD des Anwenders - ob eine Xref im PDF erschien, hing davon ab,
+    // wo dieses gerade stand (17.11.2026: Systemtopologie fehlte im PDF).
+    const QString vorlagenDir = projectPath(OpenCirtConfig::VORLAGEN_DIR);
+    const QString batchWorkDir = QDir(vorlagenDir).exists() ? vorlagenDir : QString();
+    log(QString("  Arbeitsverzeichnis: %1").arg(batchWorkDir.isEmpty()
+        ? QString("(wie dieses BricsCAD - Vorlagenordner fehlt)")
+        : QDir::toNativeSeparators(batchWorkDir)));
     
     // Prozessnummer merken: damit laesst sich die Batch-Instanz abbrechen und
     // erkennen, ob sie ohne Ergebnis verschwunden ist
     qint64 pid = 0;
     const QDateTime startedAt = QDateTime::currentDateTime();
-    bool started = QProcess::startDetached(bricscadExe, args, QString(), &pid);
+    bool started = QProcess::startDetached(bricscadExe, args, batchWorkDir, &pid);
     if (started) {
         log(QString("PDF-Publish gestartet in Batch-Instanz (Prozess %1) - Ausgabe: %2")
             .arg(pid).arg(QFileInfo(m_publishedPdfPath).fileName()));

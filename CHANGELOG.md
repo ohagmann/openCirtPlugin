@@ -5,6 +5,11 @@ Alle wesentlichen Änderungen am openCirt-Plugin werden in dieser Datei dokument
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei reinen Änderungen an Vorlagen, LISP-Skripten, Dokumentation oder Repo-Konfiguration.
 
+## [2.7.1] - 2026-11-17
+
+### Fixed
+- **PDF publizieren: Xrefs aus den Vorlagen fehlten je nach Arbeitsverzeichnis im PDF.** Die Blätter sind Kopien der Vorlagen und tragen deren relative Xref-Pfade (z. B. `../../../03- Aufträge/…/Topologie.dwg` oder `./01- Projektvorlagen/…`), die vom Ordner des Blatts aus nicht stimmen. BricsCAD findet einen solchen Pfad dann nur noch vom Arbeitsverzeichnis des Programms aus – und das erbte die Batch-Instanz vom BricsCAD des Anwenders. Ob z. B. die Systemtopologie im PDF erschien oder nur ihr Pfad, hing davon ab, wo dieses BricsCAD gerade stand. Die Batch-Instanz startet jetzt immer im Vorlagenordner des Projekts (`04- Vorlagen`); das Protokoll nennt ihn. Geprüft unter Linux mit V26 und V27: im Vorlagenordner wird die Xref aufgelöst, im Home-Ordner nicht.
+
 ## [2.7.0] - 2026-11-17
 
 ### Added
