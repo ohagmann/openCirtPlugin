@@ -573,6 +573,14 @@ Seit 2.6.0 gehen auch die Listen als Auftrag – wie die Knöpfe „IO-Liste ers
 - `geoeffnete_blaetter` beantwortet die Rückfrage von „Export Testdaten", wenn GA-FL-Blätter in BricsCAD offen sind: `"weiter"` exportiert den gespeicherten Stand, ohne Angabe gilt `abbrechen`.
 - Die Listen lesen die Zeichnungen nur. Geöffnete Zeichnungen des Projekts führen deshalb nicht zur Ablehnung; gelesen wird der gespeicherte Stand. Eine vorhandene Liste gleichen Namens in `06- Plot` wird ersetzt, die Testdaten bekommen immer einen neuen Ordner.
 
+Seit 2.7.0 geht auch „Projekt aufbauen“ als Auftrag:
+
+    { "aktion": "aufbauen", "projekt": "<Projektordner>",
+      "erstellliste": "<Ordner>/<Erstellliste>.csv", "vorschau": false }
+
+- `erstellliste` ist die CSV-Erstellliste wie beim Knopf, `vorschau` muss immer angegeben werden: `true` schreibt nur das Aufbau-Log und ändert nichts, `false` leert `05- Projekt Zeichnungen` und baut die Zeichnungen neu auf – ohne Sicherheitsabfrage. Vorher den Projektordner sichern.
+- Sind Zeichnungen des Projekts geöffnet oder liegen Sperrdateien dort, wird nichts gelöscht; das Protokoll nennt die Dateien. Im Status stehen danach der Pfad des Aufbau-Logs (`ausgabe`) und die Zähler (geplant, gelöscht, erstellt, nur kopiert, Fehler, Warnungen).
+
 Während jedes Laufs – per Knopf oder Auftrag – stehen Stand und Protokoll im Temp-Ordner: `OpenCirt_status.json` (Aktion, Zustand `laeuft`/`fertig`/`fehler`/`abgebrochen`, Abschnitt mit „Schritt von Anzahl", Zähler, Ergebnis, bei Listen-Aufträgen unter `ausgabe` die erzeugte Datei bzw. der Ordner der Testdaten) und `OpenCirt_protokoll.txt`. Eine leere Datei `OpenCirt_abbrechen` im Temp-Ordner wirkt wie ein Klick auf „Abbrechen".
 
 ### Export Testdaten

@@ -91,9 +91,11 @@ bool OcAuftrag::fromFile(const QString& path, OcAuftrag& out, QString& error) {
         // nur Projekt
     } else if (out.aktion == "testdaten") {
         erlaubt.insert("geoeffnete_blaetter");
+    } else if (out.aktion == "aufbauen") {
+        erlaubt += { "erstellliste", "vorschau" };
     } else {
         const QString aktionen =
-            "\"erstellen\", \"pdf\", \"io_liste\", \"sensorliste\" oder \"testdaten\"";
+            "\"erstellen\", \"pdf\", \"io_liste\", \"sensorliste\", \"testdaten\" oder \"aufbauen\"";
         error = out.aktion.isEmpty()
             ? QString("\"aktion\" fehlt (%1)").arg(aktionen)
             : QString("Unbekannte aktion \"%1\" (%2)").arg(out.aktion, aktionen);
@@ -146,6 +148,30 @@ bool OcAuftrag::fromFile(const QString& path, OcAuftrag& out, QString& error) {
         // keine Optionen
     } else if (out.aktion == "testdaten") {
         if (!readAntwort(o, "geoeffnete_blaetter", out.geoeffneteBlaetterWeiter, error)) return false;
+    } else if (out.aktion == "aufbauen") {
+        // Beides Pflicht: der Aufbau leert '05- Projekt Zeichnungen' - nie
+        // still per Vorgabe
+        const QString liste = o.value("erstellliste").toString().trimmed();
+        if (liste.isEmpty()) {
+            error = "\"erstellliste\" fehlt (vollstaendiger Pfad der CSV-Erstellliste)";
+            return false;
+        }
+        out.erstellliste = QDir::cleanPath(QDir::fromNativeSeparators(liste));
+        if (!QDir::isAbsolutePath(out.erstellliste)) {
+            error = QString("\"erstellliste\" muss ein vollstaendiger Pfad sein: %1").arg(liste);
+            return false;
+        }
+        if (!out.erstellliste.endsWith(".csv", Qt::CaseInsensitive)) {
+            error = QString("\"erstellliste\" muss eine CSV-Datei sein (.csv, wie beim Knopf): %1")
+                    .arg(liste);
+            return false;
+        }
+        if (!QFileInfo(out.erstellliste).isFile()) {
+            error = QString("Erstellliste nicht gefunden: %1")
+                    .arg(QDir::toNativeSeparators(out.erstellliste));
+            return false;
+        }
+        if (!readBool(o, "vorschau", out.vorschau, error)) return false;
     } else {
         const QString ziel = o.value("ziel").toString().trimmed();
         if (ziel.isEmpty()) {
@@ -192,6 +218,10 @@ QString OcAuftrag::beschreibung() const {
     if (aktion == "testdaten") {
         return QString("Export Testdaten%1")
                .arg(geoeffneteBlaetterWeiter ? " (geoeffnete Blaetter: weiter)" : "");
+    }
+    if (aktion == "aufbauen") {
+        return QString("Projekt aufbauen%1 aus %2")
+               .arg(vorschau ? " (Vorschau)" : "", QDir::toNativeSeparators(erstellliste));
     }
     return QString("PDF publizieren nach %1%2")
            .arg(QDir::toNativeSeparators(ziel), ersetzen ? " (ersetzen)" : "");

@@ -1062,6 +1062,8 @@ void OpenCirtTab::runAuftrag() {
         onSensorListeGenerate();
     } else if (m_auftrag->aktion == "testdaten") {
         onTestdatenExport();
+    } else if (m_auftrag->aktion == "aufbauen") {
+        onProjektAufbauen();
     }
     // Lauf gar nicht erst begonnen (z. B. Projektstruktur unvollstaendig)
     // oder schon fertig: Status abschliessen
@@ -3544,37 +3546,47 @@ void OpenCirtTab::onProjektAufbauen() {
         return;
     }
 
-    // -------- Erstellliste waehlen --------
-    QSettings settings("BatchProcessing", "BricsCAD_Plugin");
-    QString startDir = settings.value("openCirt/erstelllisteDir").toString();
-    if (startDir.isEmpty() || !QDir(startDir).exists()) {
-        startDir = m_projectRoot;
+    // -------- Erstellliste und Art des Laufs --------
+    // Mit Auftrag (seit 2.7.0) stehen beide im Auftrag; Dateidialog,
+    // Auswahl Vorschau/Aufbauen und Sicherheitsabfrage entfallen, der Auftrag
+    // selbst ist die ausdrueckliche Anweisung. openCirt merkt sich dabei nichts.
+    QString csvPath;
+    bool dryRun = false;
+    if (!interaktiv()) {
+        csvPath = m_auftrag->erstellliste;
+        dryRun = m_auftrag->vorschau;
+    } else {
+        QSettings settings("BatchProcessing", "BricsCAD_Plugin");
+        QString startDir = settings.value("openCirt/erstelllisteDir").toString();
+        if (startDir.isEmpty() || !QDir(startDir).exists()) {
+            startDir = m_projectRoot;
+        }
+        csvPath = QFileDialog::getOpenFileName(this,
+            "CSV-Erstellliste waehlen", startDir,
+            "Erstellliste (*.csv);;Alle Dateien (*)");
+        if (csvPath.isEmpty()) return;
+        settings.setValue("openCirt/erstelllisteDir", QFileInfo(csvPath).absolutePath());
+
+        // -------- Vorschau oder echter Lauf --------
+        QMessageBox modeBox(this);
+        modeBox.setWindowTitle(title);
+        modeBox.setIcon(QMessageBox::Question);
+        modeBox.setText(QString("Erstellliste:\n  %1\n\nProjekt:\n  %2")
+            .arg(QDir::toNativeSeparators(csvPath),
+                 QDir::toNativeSeparators(m_projectRoot)));
+        modeBox.setInformativeText(
+            "Vorschau: schreibt nur das Log, aendert nichts am Projekt.\n\n"
+            "Aufbauen: loescht den Inhalt von '05- Projekt Zeichnungen' und erzeugt "
+            "die Zeichnungen neu. Vorher folgt eine Sicherheitsabfrage.");
+        QPushButton* btnDry = modeBox.addButton("Vorschau", QMessageBox::AcceptRole);
+        QPushButton* btnReal = modeBox.addButton("Aufbauen", QMessageBox::DestructiveRole);
+        modeBox.addButton("Abbrechen", QMessageBox::RejectRole);
+        modeBox.setDefaultButton(btnDry);
+        modeBox.exec();
+
+        dryRun = (modeBox.clickedButton() == btnDry);
+        if (!dryRun && modeBox.clickedButton() != btnReal) return;
     }
-    const QString csvPath = QFileDialog::getOpenFileName(this,
-        "CSV-Erstellliste waehlen", startDir,
-        "Erstellliste (*.csv);;Alle Dateien (*)");
-    if (csvPath.isEmpty()) return;
-    settings.setValue("openCirt/erstelllisteDir", QFileInfo(csvPath).absolutePath());
-
-    // -------- Vorschau oder echter Lauf --------
-    QMessageBox modeBox(this);
-    modeBox.setWindowTitle(title);
-    modeBox.setIcon(QMessageBox::Question);
-    modeBox.setText(QString("Erstellliste:\n  %1\n\nProjekt:\n  %2")
-        .arg(QDir::toNativeSeparators(csvPath),
-             QDir::toNativeSeparators(m_projectRoot)));
-    modeBox.setInformativeText(
-        "Vorschau: schreibt nur das Log, aendert nichts am Projekt.\n\n"
-        "Aufbauen: loescht den Inhalt von '05- Projekt Zeichnungen' und erzeugt "
-        "die Zeichnungen neu. Vorher folgt eine Sicherheitsabfrage.");
-    QPushButton* btnDry = modeBox.addButton("Vorschau", QMessageBox::AcceptRole);
-    QPushButton* btnReal = modeBox.addButton("Aufbauen", QMessageBox::DestructiveRole);
-    modeBox.addButton("Abbrechen", QMessageBox::RejectRole);
-    modeBox.setDefaultButton(btnDry);
-    modeBox.exec();
-
-    const bool dryRun = (modeBox.clickedButton() == btnDry);
-    if (!dryRun && modeBox.clickedButton() != btnReal) return;
 
     log(dryRun ? "=== PROJEKT AUFBAUEN (Vorschau) ===" : "=== PROJEKT AUFBAUEN ===");
     log(QString("Erstellliste: %1").arg(QDir::toNativeSeparators(csvPath)));
@@ -3595,6 +3607,12 @@ void OpenCirtTab::onProjektAufbauen() {
             }
             logError(QString("Aufbau abgebrochen: %1 offene Zeichnung(en)/Sperrdatei(en)")
                      .arg(entries.size()));
+            if (!interaktiv()) {
+                // Auftrag: die Liste steht im Protokoll statt im Dialog
+                for (const QString& e : entries) log(e, "WARN");
+                log("Es wurde nichts geloescht und nichts erzeugt. Log: " + logPath);
+                return;
+            }
             showListWarning(this, title,
                 "Aufbau abgebrochen - Zeichnungen sind offen!\n\n"
                 "Es wurde NICHTS geloescht und NICHTS erzeugt.",
@@ -3609,6 +3627,11 @@ void OpenCirtTab::onProjektAufbauen() {
     }
 
     const ProjectBuilder::Preview& pv = builder.preview();
+    m_status.setZaehler("geplant", pv.planCount);
+    m_status.setZaehler("zu_loeschen", pv.deleteCount);
+    m_status.setZaehler("geschuetzt", pv.protectedCount);
+    m_status.setZaehler("warnungen_liste", pv.warnings);
+    if (!logPath.isEmpty()) m_status.setAusgabe(builder.logPath());
 
     // -------- Vorschau: Plan ins Log, fertig --------
     if (dryRun) {
@@ -3617,6 +3640,7 @@ void OpenCirtTab::onProjektAufbauen() {
                            "geloescht, %3 Warnung(en)")
                    .arg(pv.planCount).arg(pv.deleteCount).arg(pv.warnings));
         log(QString("Log: %1").arg(logPath));
+        if (!interaktiv()) return;
         QMessageBox::information(this, title,
             QString("Vorschau abgeschlossen - es wurde nichts geaendert.\n\n"
                     "Zu erzeugende Zeichnungen:  %1\n"
@@ -3645,9 +3669,13 @@ void OpenCirtTab::onProjektAufbauen() {
     }
     question += "\n\nFortfahren?";
 
-    if (QMessageBox::warning(this, title, question,
-                             QMessageBox::Yes | QMessageBox::No,
-                             QMessageBox::No) != QMessageBox::Yes) {
+    if (!interaktiv()) {
+        log(QString("Auftrag: %1 Datei(en) unter '05- Projekt Zeichnungen' werden geloescht, "
+                    "%2 Zeichnung(en) neu erzeugt (Sicherheitsabfrage entfaellt)")
+            .arg(pv.deleteCount).arg(pv.planCount));
+    } else if (QMessageBox::warning(this, title, question,
+                                    QMessageBox::Yes | QMessageBox::No,
+                                    QMessageBox::No) != QMessageBox::Yes) {
         builder.cancelByUser();
         log("Aufbau abgebrochen durch Benutzer (Sicherheitsabfrage)");
         return;
@@ -3708,6 +3736,11 @@ void OpenCirtTab::onProjektAufbauen() {
                  .arg(result.errors).arg(result.created).arg(result.copiedOnly));
     }
     log(QString("Log: %1").arg(logPath));
+    m_status.setZaehler("erstellt", result.created);
+    m_status.setZaehler("nur_kopiert", result.copiedOnly);
+    m_status.setZaehler("fehler", result.errors);
+    m_status.setZaehler("warnungen", result.warnings);
+    if (!interaktiv()) return;
 
     if (result.errors == 0 && result.warnings == 0) {
         QMessageBox::information(this, title,

@@ -32,6 +32,13 @@
  *     { "aktion": "testdaten", "projekt": "<Projektordner>",
  *       "geoeffnete_blaetter": "abbrechen" }   (optional, oder "weiter")
  *
+ * Projekt aufbauen (seit 2.7.0), wie der Knopf "Projekt aufbauen": leert
+ * '05- Projekt Zeichnungen' und erzeugt die Zeichnungen aus der Erstellliste
+ * neu; mit "vorschau": true nur das Aufbau-Log, ohne Aenderung:
+ *
+ *     { "aktion": "aufbauen", "projekt": "<Projektordner>",
+ *       "erstellliste": "<Ordner>/<Name>.csv", "vorschau": false }
+ *
  * Waehrend eines Laufs - per Auftrag oder per Knopf - steht der Stand in
  * <Temp>/OpenCirt_status.json, das Protokoll in <Temp>/OpenCirt_protokoll.txt.
  * Andere Programme lesen beides, ohne BricsCAD zu stoeren. Liegt die Datei
@@ -59,7 +66,7 @@ namespace BatchProcessing {
 
 struct OcAuftrag {
     QString id;                 ///< Kennung des Aufrufers, sonst Zeitstempel
-    QString aktion;             ///< "erstellen", "pdf", "io_liste", "sensorliste", "testdaten"
+    QString aktion;             ///< "erstellen", "pdf", "io_liste", "sensorliste", "testdaten", "aufbauen"
     QString projekt;            ///< Projektordner (Schreibweise mit /)
 
     // aktion "erstellen"
@@ -80,6 +87,11 @@ struct OcAuftrag {
     // aktion "testdaten": GA-FL-Blaetter in BricsCAD geoeffnet -> trotzdem
     // den gespeicherten Stand exportieren? Sonst Abbruch.
     bool geoeffneteBlaetterWeiter = false;
+
+    // aktion "aufbauen": CSV-Erstellliste (vollstaendiger Pfad, mit /) und
+    // Vorschau (nur Aufbau-Log) oder echter Lauf - beides Pflicht
+    QString erstellliste;
+    bool vorschau = false;
 
     /// Listen-Auftrag (io_liste, sensorliste, testdaten): liest die
     /// Zeichnungen nur und aendert sie nicht

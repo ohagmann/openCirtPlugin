@@ -5,6 +5,13 @@ Alle wesentlichen Änderungen am openCirt-Plugin werden in dieser Datei dokument
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei reinen Änderungen an Vorlagen, LISP-Skripten, Dokumentation oder Repo-Konfiguration.
 
+## [2.7.0] - 2026-11-17
+
+### Added
+- **„Projekt aufbauen“ als Auftrag von außen.** `(opencirt-auftrag …)` kennt die Aktion `aufbauen`: wie der Knopf, aber ohne Dateidialog, ohne Auswahl Vorschau/Aufbauen und ohne Sicherheitsabfrage – der Auftrag selbst ist die Anweisung. Pflicht sind `erstellliste` (vollständiger Pfad der CSV-Erstellliste, wie sie der Knopf erwartet) und `vorschau` (`true` = nur das Aufbau-Log, nichts wird geändert; `false` = `05- Projekt Zeichnungen` leeren und neu aufbauen). Keine Vorgaben, openCirt merkt sich nichts (auch nicht den Ordner der Erstellliste, den sich der Knopf merkt).
+  - Sind Zeichnungen des Projekts offen oder liegen Sperrdateien in `05- Projekt Zeichnungen`, endet der Auftrag mit Fehler; die Liste steht im Protokoll statt in einem Dialog, am Projekt ist nichts geändert.
+  - `OpenCirt_status.json`: `ausgabe` = Pfad des Aufbau-Logs, Zähler `geplant`, `zu_loeschen`, `geschuetzt`, `warnungen_liste` (aus der Vorbereitung) und nach dem Lauf `erstellt`, `nur_kopiert`, `fehler`, `warnungen`. Der Fortschritt „Projekt aufbauen: n von N“ stand schon vorher im Status.
+
 ## [2.6.0] - 2026-11-16
 
 ### Added
