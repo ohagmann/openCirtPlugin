@@ -37,6 +37,8 @@ openCirt automatisiert die Erstellung von GA-Planungsunterlagen in BricsCAD. Aus
 
 Der gesamte Ablauf von der Schema-Zeichnung bis zum fertigen PDF-Planungspaket ist automatisiert.
 
+> **Cloud-Sync pausieren.** „Projekt aufbauen“, „Projekt erstellen“ und „PDF publizieren“ schreiben in kurzer Zeit hunderte Zeichnungen. Liegt das Projekt in einem Ordner, den ein Cloud-Sync abgleicht (z. B. Dropbox, OneDrive, kDrive), den Sync für die Dauer der Aktion pausieren. Sonst legt er Konfliktkopien an (`…_conflict_…dwg`, `… (Konflikt …).dwg` o. ä.), die der nächste Lauf als zusätzliche Blätter ins Projekt und ins PDF übernimmt. openCirt weist vor diesen Aktionen darauf hin (seit 2.7.2).
+
 ---
 
 ## 2. Installation

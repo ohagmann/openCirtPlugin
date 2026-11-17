@@ -5,6 +5,11 @@ Alle wesentlichen Änderungen am openCirt-Plugin werden in dieser Datei dokument
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei reinen Änderungen an Vorlagen, LISP-Skripten, Dokumentation oder Repo-Konfiguration.
 
+## [2.7.2] - 2026-11-17
+
+### Added
+- **Hinweis auf Cloud-Sync vor Läufen, die viele Zeichnungen schreiben.** Vor „Projekt aufbauen“ (in der Sicherheitsabfrage), „Projekt erstellen“ (in der Sicherheitsabfrage) und „PDF publizieren“ (fett im Dialog für Speicherort und Name) steht: „Falls Sie einen Cloud-Sync nutzen (z. B. Dropbox, OneDrive, kDrive): Bitte pausieren Sie ihn für die Dauer dieser Aktion, um Fehler und Dateikollisionen zu vermeiden.“ Bei Aufträgen von außen (ohne Dialog) steht derselbe Satz im Protokoll. Anlass: Ein Sync-Client legte während eines Laufs Konfliktkopien von Blättern an, die der nächste Lauf als zusätzliche Seiten ins PDF übernahm.
+
 ## [2.7.1] - 2026-11-17
 
 ### Fixed

@@ -157,6 +157,14 @@ static bool runWarningDialog(QWidget* parent,
     return dlg.exec() == QDialog::Accepted;
 }
 
+/// Hinweis vor Laeufen, die viele Zeichnungen schreiben (Projekt aufbauen,
+/// Projekt erstellen, PDF publizieren). Ein Cloud-Sync, der die Dateien
+/// waehrend des Laufs hochlaedt, legt Konfliktkopien an; die erscheinen beim
+/// naechsten Lauf als zusaetzliche Blaetter im Projekt und im PDF.
+static const char* const kCloudSyncHinweis =
+    "Falls Sie einen Cloud-Sync nutzen (z. B. Dropbox, OneDrive, kDrive): Bitte pausieren "
+    "Sie ihn fuer die Dauer dieser Aktion, um Fehler und Dateikollisionen zu vermeiden.";
+
 /// Sammelmeldung mit flacher Liste (ein Eintrag je Zeile).
 static bool showListWarning(QWidget* parent,
                             const QString& title,
@@ -1761,15 +1769,18 @@ void OpenCirtTab::onFullProjectGenerate() {
             "ZIP-Archiv als Sicherungskopie.\n\n"
             "Schritte: Deckblaetter + BMK + BAS + Extraktion + GA-FL + Summen + Textbreiten%1\n"
             "Alle bestehenden *_Deckblatt.dwg, *_GA_FL_*.dwg%2 und *_Summe*.dwg werden geloescht.\n\n"
+            "%3\n\n"
             "Fortfahren?")
                 .arg(doLl ? " + Leistungslisten" : "",
-                     doLl ? ", *_Leistungsliste_*.dwg" : ""),
+                     doLl ? ", *_Leistungsliste_*.dwg" : "",
+                     QString::fromLatin1(kCloudSyncHinweis)),
             QMessageBox::Yes | QMessageBox::Cancel);
 
         if (reply != QMessageBox::Yes) return;
     }
     
     log("=== PROJEKT ERSTELLEN ===");
+    log(QString("Hinweis: %1").arg(QString::fromLatin1(kCloudSyncHinweis)));
     saveConfig();
     
     QStringList dwgFiles = findProjectDwgs();
@@ -3667,7 +3678,9 @@ void OpenCirtTab::onProjektAufbauen() {
         question += QString("\n\nBeim Lesen der Liste gab es %1 Warnung(en), "
                             "Einzelheiten im Log:\n%2").arg(pv.warnings).arg(logPath);
     }
+    question += QString("\n\n%1").arg(QString::fromLatin1(kCloudSyncHinweis));
     question += "\n\nFortfahren?";
+    log(QString("Hinweis: %1").arg(QString::fromLatin1(kCloudSyncHinweis)));
 
     if (!interaktiv()) {
         log(QString("Auftrag: %1 Datei(en) unter '05- Projekt Zeichnungen' werden geloescht, "
@@ -6057,6 +6070,7 @@ void OpenCirtTab::onPublishPdf() {
     if (!requireProjectStructure()) return;
     
     log("=== PDF PUBLIZIEREN ===");
+    log(QString("Hinweis: %1").arg(QString::fromLatin1(kCloudSyncHinweis)));
     
     // Step 0: Cleanup old Inhalt DWGs
     cleanupInhalt();
@@ -6207,6 +6221,11 @@ bool OpenCirtTab::askPublishTarget(int sheetCount, int tocPageCount,
                 "Schritt 1: Inhaltsverzeichnis erzeugen\n"
                 "Schritt 2: PDF automatisch publizieren")
         .arg(sheetCount).arg(tocPageCount).arg(sheetCount + tocPageCount), &dlg));
+    layout->addSpacing(6);
+    QLabel* syncHint = new QLabel(QString::fromLatin1(kCloudSyncHinweis), &dlg);
+    syncHint->setWordWrap(true);
+    syncHint->setStyleSheet("QLabel { font-weight: bold; }");
+    layout->addWidget(syncHint);
     
     QLineEdit* dirEdit = new QLineEdit(&dlg);
     QWidget* dirRow = new QWidget(&dlg);
