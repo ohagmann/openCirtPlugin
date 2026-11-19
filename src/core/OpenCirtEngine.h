@@ -386,7 +386,10 @@ public:
     /// GA-Leistungsstempel-Verbindung suchen. Ein Linienende gehoert zu einem
     /// Block, wenn es hoechstens tol von dessen sichtbarer Geometrie entfernt
     /// liegt (ausgeblendete Teile parametrischer Bloecke zaehlen nicht).
-    OcLlScan scanLeistungsstempel(double tol = 0.5) const;
+    /// basSegments (BAS.csv): hat das Geraet keinen BAS (kein aktiver
+    /// Datenpunkt), wird er daraus wie in genBas gebildet, nur fuer die Liste.
+    OcLlScan scanLeistungsstempel(double tol = 0.5,
+                                  const QVector<OcBasSegment>* basSegments = nullptr) const;
 
     /// Lage der Liste in der Listenvorlage: ASP-Band der Vorlage als Anker,
     /// Hoehen aus den Blockdefinitionen, Unterkante ueber dem Plankopf.

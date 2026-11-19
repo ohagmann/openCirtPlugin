@@ -2143,7 +2143,10 @@ bool OpenCirtTab::runGesamtlauf(const QStringList& dwgFiles, RunCounts& counts) 
             }
             if (doLl) {
                 // Nach genBas: der BAS des Geraets ist jetzt aktuell
-                m_llScans.insert(pathKey(path), dwg.scanLeistungsstempel());
+                // Mit den BAS-Bausteinen: auch ein Geraet ohne aktiven
+                // Datenpunkt (Platzhalter) liefert seinen BAS fuer die Liste
+                m_llScans.insert(pathKey(path), dwg.scanLeistungsstempel(
+                    0.5, doBas && !basSegments.isEmpty() ? &basSegments : nullptr));
             }
             const OcExtractResult ex = dwg.extractDp(subDir, &extractLog);
             if (ex.ok) {

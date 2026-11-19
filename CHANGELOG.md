@@ -5,6 +5,11 @@ Alle wesentlichen Änderungen am openCirt-Plugin werden in dieser Datei dokument
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei reinen Änderungen an Vorlagen, LISP-Skripten, Dokumentation oder Repo-Konfiguration.
 
+## [2.8.1] - 2026-11-19
+
+### Changed
+- **Anlagenleistungsliste: Gerät ohne aktiven Datenpunkt als Ziel eines Leistungsstempels.** Endet die Verbindungslinie an einem Gerät, das keinen aktiven Datenpunkt hat (z. B. ein ausgeblendeter Platzhalter „SSK-interne Verbraucher“ im Schrankblatt, der weder in der GA-FL noch in der IO-Liste erscheinen soll), schreibt die BAS-Generierung ihm keinen BAS. Die Liste bildet den BAS dann selbst aus `BAS.csv` und den Attributen des Geräts und des Plankopfs (wie die BAS-Generierung, Datenpunkt 1) und kürzt ihn wie gewohnt nach `OC_AKS`. In die Zeichnung wird dabei nichts geschrieben. Nur wenn „Projekt erstellen“ mit BAS-Generierung läuft.
+
 ## [2.8.0] - 2026-11-19
 
 ### Added

@@ -2441,7 +2441,7 @@ int OcLlLayout::rowsPerPage() const
     return std::max(0, static_cast<int>(std::floor(room / hZeile + 1e-6)));
 }
 
-OcLlScan OcDrawing::scanLeistungsstempel(double tol) const
+OcLlScan OcDrawing::scanLeistungsstempel(double tol, const QVector<OcBasSegment>* basSegments) const
 {
     OcLlScan scan;
     if (!d->db) return scan;
@@ -2649,6 +2649,39 @@ OcLlScan OcDrawing::scanLeistungsstempel(double tol) const
                         bestN = n;
                         bas = value;
                     }
+                }
+                // Geraet ohne aktiven Datenpunkt (z. B. ausgeblendeter Platzhalter
+                // "SSK-interne Verbraucher"): genBas schreibt ihm keinen BAS. Mit
+                // den BAS-Bausteinen wird er hier wie in genBas gebildet (Datenpunkt
+                // 1), nur fuer die Liste und ohne ihn in die Zeichnung zu schreiben;
+                // abgeschnitten wird ohnehin nach OC_AKS.
+                if (bas.isEmpty() && basSegments && !basSegments->isEmpty()) {
+                    int plankopf = -1;
+                    for (int i = 0; i < d->inserts.size(); ++i) {
+                        if (d->inserts.at(i).upper.startsWith(QLatin1String("OC_RSH_PLANKOPF_QUER"))) {
+                            plankopf = i;
+                            break;
+                        }
+                    }
+                    auto readAttr = [this](int insert, const QString& name) {
+                        QString value;
+                        Impl::readFirst(d->inserts.at(insert), OcEngine::lispUpper(name), value);
+                        return value;
+                    };
+                    const int devInsert = deviceIdx.at(bestK);
+                    for (const OcBasSegment& seg : *basSegments) {
+                        if (seg.type == OcBasSegment::Static) {
+                            bas += seg.value;
+                            continue;
+                        }
+                        const QString name = (seg.type == OcBasSegment::AttrDp)
+                            ? seg.value + QStringLiteral("_1")
+                            : seg.value;
+                        QString value = readAttr(devInsert, name);
+                        if (value.isEmpty() && plankopf >= 0) value = readAttr(plankopf, name);
+                        bas += value;
+                    }
+                    bas = bas.trimmed();
                 }
                 if (bas.isEmpty()) {
                     st.link = OcLlStamp::NoBasValue;
