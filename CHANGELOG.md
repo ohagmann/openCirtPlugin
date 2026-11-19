@@ -5,6 +5,20 @@ Alle wesentlichen Änderungen am openCirt-Plugin werden in dieser Datei dokument
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei reinen Änderungen an Vorlagen, LISP-Skripten, Dokumentation oder Repo-Konfiguration.
 
+## [2.8.0] - 2026-11-19
+
+### Added
+- **Anlagenleistungsliste: Spalte „Betriebsmittel“** zwischen Versorgungsbereich und Standort. Sie zeigt `OC_BEZEICHNUNG` des Geräts, an dem die Verbindungslinie des Stempels endet (z. B. „ZUL-Ventilator“, „VL UWP“), damit man nicht nur aus dem BAS erschließen muss, was gemeint ist. Das Attribut heißt `OC_LL_BETRIEBSMITTEL` und steht in den Listenblöcken ab V4 (`OC_VORLAGE_LEISTUNGSLISTE_KOPF/ZEILE/SUMME_V4`: BAS 100 mm, Versorgungsbereich 58 mm, Betriebsmittel 50 mm, Gesamtbreite unverändert 531 mm; V5: Absicherung 22 mm ohne Einheit im Kopf, Bemerkungen 80 mm, für Angaben wie „LSS B16A“ oder „MSS 2,2kW“ aus `OC_ABSICHERUNG`). Eine Vorlage mit älteren Blöcken bleibt verwendbar, die Spalte fehlt dann.
+- **PDF publizieren: Anlagenleistungslisten zusätzlich als eigene PDF.** Enthält das Projekt Anlagenleistungslisten, publiziert dieselbe Batch-Instanz direkt nach der Gesamt-PDF eine zweite Datei `<Name>_Anlagenleistungsliste.pdf` mit allen Listenblättern aller ASP – für Bauherren, die die Liste als einzelnes Dokument verlangen. Eine ältere Fassung gleichen Namens wird ersetzt; bricht der Publish ab, werden halbe Dateien beider PDFs entfernt. Protokoll und Abschlussmeldung nennen die Datei.
+- **Prüfung der Leistungsstempel:** Endet eine Verbindungslinie an keinem Gerät, nennt das Protokoll das nächstgelegene Gerät und seinen Abstand zum Linienende.
+
+### Changed
+- **Anlagenleistungsliste: Leerzeile nur beim Wechsel des Gewerks** (Plankopf `GEWERK`). Die Stempel aufeinanderfolgender Blätter desselben Gewerks stehen ohne Leerzeile untereinander; bis 2.7.2 stand nach jedem Blatt eine Leerzeile.
+- **Standort ASP:** Das Schrankblatt wird auch an `OC_AKS` „ASPnn“ ohne Strich erkannt (BLB-Kennzeichnung), nicht nur an „ASP-…“. Vorher blieb der Standort in solchen Projekten leer.
+
+### Fixed
+- **Leistungsstempel: Die ausgeblendeten Zeilen eines Stempels zählten als sichtbar.** Der Layer `*SUPPRESS` (ausgeblendete Teile parametrischer Blöcke) ist ein verborgener Layer, und der Layer-Iterator überspringt verborgene Layer von sich aus – openCirt fand ihn nie. Ein Stempel mit 8 von 16 Zeilen reichte damit scheinbar bis unter seine letzte sichtbare Zeile. Endete eine kurze Verbindungslinie in diesem Bereich am Gerät (z. B. senkrecht vom Stempel auf die Oberkante eines Ventilator-Ovals), lagen für openCirt beide Enden am Stempel, und je nach Zeichenrichtung der Linie wurde am Stempel-Ende nach dem Gerät gesucht: „Linie endet an keinem Gerät mit BAS“, obwohl die Linie das Gerät berührte. Der Iterator sieht jetzt auch verborgene Layer (zusätzlich Suche nach dem Namen). Liegen trotzdem beide Enden am Stempel, wird das Gerät an beiden Enden gesucht. Nachgestellt und geprüft an einem Testprojekt (RLT-Hauptanlage, Linien vom Ventilator-Oval zum Stempel gezeichnet): 2.7.2 meldet beide Ventilatoren ohne Gerät, 2.8.0 verknüpft sie.
+
 ## [2.7.2] - 2026-11-17
 
 ### Added

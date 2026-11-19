@@ -2450,6 +2450,7 @@ OcLlScan OcDrawing::scanLeistungsstempel(double tol) const
                                            QStringLiteral("OC_RSH_PLANKOPF*"));
     scan.ortskennzeichen = attributeValue(QStringLiteral("ORTSKENNZEICHEN"),
                                           QStringLiteral("OC_RSH_PLANKOPF*"));
+    scan.gewerk = attributeValue(QStringLiteral("GEWERK"), QStringLiteral("OC_RSH_PLANKOPF*"));
 
     // Modellbereich und Layer, die die Suche braucht
     AcDbObjectId modelSpace, linkLayer, suppressLayer;
@@ -2463,6 +2464,14 @@ OcLlScan OcDrawing::scanLeistungsstempel(double tol) const
         if (d->db->getLayerTable(pLayers, AcDb::kForRead) == Acad::eOk && pLayers) {
             AcDbLayerTableIterator* pIter = nullptr;
             pLayers->newIterator(pIter);
+            // *SUPPRESS ist ein verborgener Layer (ausgeblendete Teile
+            // parametrischer Bloecke); der Iterator ueberspringt verborgene
+            // Layer von sich aus. Bis 2.7.2 blieb suppressLayer deshalb leer:
+            // die ausgeblendeten Zeilen eines Stempels zaehlten als sichtbar,
+            // der Stempel lag scheinbar auch am Geraete-Ende einer kurzen
+            // Linie, und je nach Zeichenrichtung wurde am falschen Ende nach
+            // dem Geraet gesucht.
+            if (pIter) pIter->setSkipHidden(false);
             for (; pIter && !pIter->done(); pIter->step()) {
                 AcDbObjectId id;
                 if (pIter->getRecordId(id) != Acad::eOk) continue;
@@ -2471,6 +2480,7 @@ OcLlScan OcDrawing::scanLeistungsstempel(double tol) const
                 else if (name == QLatin1String("*SUPPRESS")) suppressLayer = id;
             }
             delete pIter;
+            if (suppressLayer.isNull()) pLayers->getAt(_T("*SUPPRESS"), suppressLayer);
             pLayers->close();
         }
     }
@@ -2503,9 +2513,10 @@ OcLlScan OcDrawing::scanLeistungsstempel(double tol) const
             if (a.upper.startsWith(QLatin1String("OC_BAS_DP_"))) { hasBas = true; break; }
         }
         if (hasBas) deviceIdx.append(i);
+        // Schrankblatt: Bauteil ASP-01 (mit Strich) oder ASP01 (BLB-Kennzeichnung ohne Strich)
+        static const QRegularExpression aspRe(QStringLiteral("^ASP(-|\\d)"));
         if (!scan.schrankBlatt
-            && Impl::lastOrEmpty(ins, QStringLiteral("OC_AKS")).trimmed().toUpper()
-                   .startsWith(QLatin1String("ASP-"))) {
+            && aspRe.match(Impl::lastOrEmpty(ins, QStringLiteral("OC_AKS")).trimmed().toUpper()).hasMatch()) {
             scan.schrankBlatt = true;
         }
     }
@@ -2539,13 +2550,14 @@ OcLlScan OcDrawing::scanLeistungsstempel(double tol) const
         }
     }
 
-    auto distanceTo = [&](const Impl::Ins& ins, const AcGePoint3d& p) {
+    // precise = true: ohne Vorauswahl (nur fuer den Hinweis "naechstes Geraet")
+    auto distanceTo = [&](const Impl::Ins& ins, const AcGePoint3d& p, bool precise = false) {
         AcDbBlockReference* pRef = nullptr;
         if (acdbOpenObject(pRef, ins.id, AcDb::kForRead) != Acad::eOk || !pRef) return kLlInfinity;
         double dist = kLlInfinity;
         AcDbExtents ext;
         // Vorauswahl ueber die Ausdehnung, erst dann zerlegen
-        if (pRef->getGeomExtents(ext) != Acad::eOk || boxDistance(p, ext) <= tol) {
+        if (precise || pRef->getGeomExtents(ext) != Acad::eOk || boxDistance(p, ext) <= tol) {
             dist = visibleDistance(pRef, p, suppressLayer);
         }
         pRef->close();
@@ -2581,25 +2593,51 @@ OcLlScan OcDrawing::scanLeistungsstempel(double tol) const
                 const double da = distanceTo(ins, e.a);
                 const double db = distanceTo(ins, e.b);
                 if (std::min(da, db) > tol) continue;
-                const AcGePoint3d farEnd = (da <= db) ? e.b : e.a;
+                // Das Geraet sitzt am anderen Ende. Liegen beide Enden am
+                // Stempel (kurze Linie ueber der Stempelflaeche), entscheidet
+                // nicht die Zeichenrichtung: gesucht wird an beiden Enden, das
+                // vom Stempel weiter entfernte zuerst.
+                AcGePoint3d farEnd = (da <= db) ? e.b : e.a;
+                const bool beideAmStempel = da <= tol && db <= tol;
+                const AcGePoint3d otherEnd = (da <= db) ? e.a : e.b;
 
                 int bestK = -1;
                 double bestDist = kLlInfinity;
-                for (int k = 0; k < deviceIdx.size(); ++k) {
-                    if (!deviceInModel.at(k)) continue;
-                    const double dist = distanceTo(d->inserts.at(deviceIdx.at(k)), farEnd);
-                    if (dist <= tol && dist < bestDist) {
-                        bestDist = dist;
-                        bestK = k;
+                for (int pass = 0; pass < (beideAmStempel ? 2 : 1) && bestK < 0; ++pass) {
+                    const AcGePoint3d probe = pass == 0 ? farEnd : otherEnd;
+                    for (int k = 0; k < deviceIdx.size(); ++k) {
+                        if (!deviceInModel.at(k)) continue;
+                        const double dist = distanceTo(d->inserts.at(deviceIdx.at(k)), probe);
+                        if (dist <= tol && dist < bestDist) {
+                            bestDist = dist;
+                            bestK = k;
+                        }
                     }
+                    if (bestK >= 0) farEnd = probe;
                 }
                 if (bestK < 0) {
                     st.link = OcLlStamp::NoDevice;
+                    // Hinweis fuers Protokoll: welches Geraet liegt am naechsten?
+                    for (int k = 0; k < deviceIdx.size(); ++k) {
+                        if (!deviceInModel.at(k)) continue;
+                        const Impl::Ins& cand = d->inserts.at(deviceIdx.at(k));
+                        const double dist = distanceTo(cand, farEnd, true);
+                        if (dist < kLlInfinity && (st.nearestDistance < 0 || dist < st.nearestDistance)) {
+                            st.nearestDistance = dist;
+                            st.nearestDevice = (Impl::lastOrEmpty(cand, QStringLiteral("OC_AKS")).trimmed()
+                                                + QLatin1Char(' ')
+                                                + Impl::lastOrEmpty(cand, QStringLiteral("OC_BEZEICHNUNG")).trimmed())
+                                                   .trimmed();
+                        }
+                    }
                     continue;   // vielleicht fuehrt eine weitere Linie zum Geraet
                 }
 
                 const Impl::Ins& dev = d->inserts.at(deviceIdx.at(bestK));
                 st.deviceAks = Impl::lastOrEmpty(dev, QStringLiteral("OC_AKS")).trimmed();
+                st.deviceBezeichnung = Impl::lastOrEmpty(dev, QStringLiteral("OC_BEZEICHNUNG")).trimmed();
+                st.nearestDevice.clear();
+                st.nearestDistance = -1.0;
                 // Erster nicht leerer BAS in der Reihenfolge der Datenpunkte
                 QString bas;
                 int bestN = INT_MAX;

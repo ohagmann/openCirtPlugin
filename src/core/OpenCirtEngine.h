@@ -150,8 +150,12 @@ struct OcLlStamp {
     Link link = NoLine;
     QString bas;                    ///< BAS des Geraets bis einschliesslich OC_AKS
     QString deviceAks;              ///< OC_AKS des Geraets
+    QString deviceBezeichnung;      ///< OC_BEZEICHNUNG des Geraets (Spalte Betriebsmittel)
     bool basCut = true;             ///< false: OC_AKS stand nicht im BAS, BAS ungekuerzt
     double x = 0, y = 0;            ///< Einfuegepunkt
+    /// Nur bei NoDevice: das naechste Geraet zum Linienende (Hinweis im Protokoll)
+    QString nearestDevice;          ///< OC_AKS und OC_BEZEICHNUNG, leer ohne Geraet
+    double nearestDistance = -1.0;  ///< Abstand in Zeichnungseinheiten, < 0 ohne Geraet
 };
 
 /// Was eine Quellzeichnung zur Anlagenleistungsliste beitraegt
@@ -159,7 +163,8 @@ struct OcLlScan {
     QVector<OcLlStamp> stamps;      ///< nach [n] sortiert
     QString zeichnungsnummer;       ///< Plankopf ZEICHNUNGSNUMMER
     QString ortskennzeichen;        ///< Plankopf ORTSKENNZEICHEN
-    bool schrankBlatt = false;      ///< Blatt traegt das Bauteil ASP-* (Schrankblatt)
+    QString gewerk;                 ///< Plankopf GEWERK (Leerzeilen der Liste nur bei Gewerkwechsel)
+    bool schrankBlatt = false;      ///< Blatt traegt das Bauteil ASP-* bzw. ASPnn (Schrankblatt)
 };
 
 /// Lage der Liste auf dem Listenblatt, aus der Vorlage gelesen

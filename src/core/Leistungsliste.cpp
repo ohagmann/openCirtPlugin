@@ -121,6 +121,7 @@ OcPairs zeile(const OcLlStamp& stamp, const QString& bereich,
     OcPairs row;
     row << qMakePair(QStringLiteral("OC_LL_BAS"), stamp.bas)
         << qMakePair(QStringLiteral("OC_LL_BEREICH"), bereich)
+        << qMakePair(QStringLiteral("OC_LL_BETRIEBSMITTEL"), stamp.deviceBezeichnung)
         << qMakePair(QStringLiteral("OC_LL_STANDORT"), standort);
     for (const char* key : { "OC_LL_ANZAHL", "OC_LL_P_EINZELN", "OC_LL_GLZ",
                              "OC_LL_ART", "OC_LL_SPANNUNG" }) {

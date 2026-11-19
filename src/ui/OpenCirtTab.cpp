@@ -5908,7 +5908,8 @@ static QMap<QString, QString> readPlankopfAttribute(const QString& dwgPath,
  * @return Path to generated DSD file, or empty on error
  */
 QString OpenCirtTab::generateDsdFile(const QStringList& orderedDwgs,
-                                      const QString& outDir, const QString& outName) {
+                                      const QString& outDir, const QString& outName,
+                                      const QString& dsdFileName) {
     // Ausgabepdf: <outDir>/<outName>. Ziel und Name waehlt der Anwender im
     // Publish-Dialog (askPublishTarget); sie werden in der DSD eingetragen,
     // zusammen mit PromptForDwfName=FALSE, damit BricsCAD ohne Nachfrage
@@ -6046,7 +6047,7 @@ QString OpenCirtTab::generateDsdFile(const QStringList& orderedDwgs,
     
     // Write DSD to temp file
     QString tempPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    QString dsdPath = tempPath + "/OpenCirt_publish.dsd";
+    QString dsdPath = tempPath + "/" + dsdFileName;
     
     QFile file(dsdPath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
@@ -6374,6 +6375,37 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs,
     // Vergebener Ausgabe-Pfad - BricsCAD schreibt die PDF genau dorthin
     m_publishedPdfPath = QDir::cleanPath(outDir + "/" + outName);
     m_pdfWaitPolls = 0;
+
+    // Anlagenleistungslisten zusaetzlich als eigene PDF (alle ASP in einer
+    // Datei), Name wie die Haupt-PDF mit "_Anlagenleistungsliste" - fuer
+    // Bauherren, die die Liste als einzelnes Dokument verlangen (seit 2.8.0).
+    // Dieselbe Batch-Instanz publiziert sie direkt danach.
+    QString llDsdPath;
+    m_publishedLlPdfPath.clear();
+    {
+        QStringList llDwgs;
+        for (const QString& p : orderedDwgs) {
+            if (QFileInfo(p).fileName().contains(QStringLiteral("_Leistungsliste_"), Qt::CaseInsensitive)) {
+                llDwgs << p;
+            }
+        }
+        if (!llDwgs.isEmpty()) {
+            const QString base = outName.endsWith(QStringLiteral(".pdf"), Qt::CaseInsensitive)
+                ? outName.left(outName.size() - 4) : outName;
+            const QString llName = base + QStringLiteral("_Anlagenleistungsliste.pdf");
+            const QString llPath = QDir::cleanPath(outDir + "/" + llName);
+            // Gehoert zum selben Publish: eine aeltere Fassung wird ersetzt
+            if (QFileInfo::exists(llPath) && !QFile::remove(llPath)) {
+                log("Anlagenleistungslisten einzeln: vorhandene PDF laesst sich nicht ersetzen "
+                    "(in einem anderen Programm geoeffnet?) - nur die Haupt-PDF wird erzeugt: "
+                    + QDir::toNativeSeparators(llPath), "WARN");
+            } else {
+                llDsdPath = generateDsdFile(llDwgs, outDir, llName,
+                                            QStringLiteral("OpenCirt_publish_ll.dsd"));
+                if (!llDsdPath.isEmpty()) m_publishedLlPdfPath = llPath;
+            }
+        }
+    }
     
     // Eine vorhandene Datei hat der Anwender im Dialog zum Ersetzen
     // freigegeben. Sie wird vor dem Start geloescht: sonst fragt die
@@ -6408,6 +6440,11 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs,
     scr += "(progn (setvar \"EXPERT\" 5)(princ))\n";
     scr += "(progn (setvar \"BACKGROUNDPLOT\" 0)(princ))\n";
     scr += QString("_.-PUBLISH \"%1\"\n").arg(dsdSlash);
+    if (!llDsdPath.isEmpty()) {
+        QString llDsdSlash = llDsdPath;
+        llDsdSlash.replace("\\", "/");
+        scr += QString("_.-PUBLISH \"%1\"\n").arg(llDsdSlash);
+    }
     scr += "(progn (setvar \"BACKGROUNDPLOT\" 2)(princ))\n";
     scr += "(progn (setvar \"FILEDIA\" 1)(princ))\n";
     scr += "(progn (setvar \"CMDECHO\" 1)(princ))\n";
@@ -6453,8 +6490,12 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs,
     
     log(QString("Starte BricsCAD Batch-Instanz: %1").arg(bricscadExe));
     log(QString("  /b \"%1\" \"%2\"").arg(dwgPathWin, scrPathWin));
-    log(QString("  SCR: FILEDIA=0 -> -PUBLISH -> Marker -> _.QUIT"));
+    log(QString("  SCR: FILEDIA=0 -> -PUBLISH%1 -> Marker -> _.QUIT")
+        .arg(llDsdPath.isEmpty() ? QString() : QStringLiteral(" -> -PUBLISH (Anlagenleistungslisten)")));
     log(QString("  PDF-Ausgabe: %1").arg(m_publishedPdfPath));
+    if (!m_publishedLlPdfPath.isEmpty()) {
+        log(QString("  Anlagenleistungslisten einzeln: %1").arg(m_publishedLlPdfPath));
+    }
 
     // Arbeitsverzeichnis der Batch-Instanz: der Vorlagenordner des Projekts.
     // Die Blaetter sind Kopien der Vorlagen und tragen deren relative
@@ -6558,8 +6599,10 @@ void OpenCirtTab::cancelPublish(const QString& reason) {
     }
     // Eine halb geschriebene PDF ist wertlos. BricsCAD schreibt waehrend des
     // Publish zusaetzlich <Name>.pdf.{GUID}.tmp daneben (V27, 2026-11-06).
-    if (!m_publishedPdfPath.isEmpty()) {
-        const QFileInfo pdf(m_publishedPdfPath);
+    // Das gilt auch fuer die Anlagenleistungslisten einzeln.
+    for (const QString& halb : { m_publishedPdfPath, m_publishedLlPdfPath }) {
+        if (halb.isEmpty()) continue;
+        const QFileInfo pdf(halb);
         QStringList reste;
         if (pdf.exists()) reste << pdf.absoluteFilePath();
         for (const QFileInfo& tmp : QDir(pdf.absolutePath()).entryInfoList(
@@ -6579,6 +6622,7 @@ void OpenCirtTab::cancelPublish(const QString& reason) {
     }
     removeStalePublishLocks();
     m_publishedPdfPath.clear();
+    m_publishedLlPdfPath.clear();
     endPublishWait();
     const QString line = "PDF publizieren abgebrochen - es wurde keine PDF erzeugt";
     logError(line);
@@ -6660,6 +6704,20 @@ void OpenCirtTab::onPdfDonePollTimer() {
         sizeStr = QString("%1 KB").arg(bytes / 1024.0, 0, 'f', 0);
     }
     
+    // Anlagenleistungslisten einzeln: entstehen im selben Skript vor dem Marker
+    QString llHinweis;
+    if (!m_publishedLlPdfPath.isEmpty()) {
+        const QFileInfo llInfo(m_publishedLlPdfPath);
+        if (llInfo.exists() && llInfo.size() > 0) {
+            log(QString("Anlagenleistungslisten einzeln: %1").arg(llInfo.fileName()));
+            llHinweis = QString("\nAnlagenleistungslisten einzeln: %1").arg(llInfo.fileName());
+        } else {
+            log(QString("Anlagenleistungslisten einzeln: %1 wurde nicht erzeugt")
+                .arg(llInfo.fileName()), "WARN");
+        }
+        m_publishedLlPdfPath.clear();
+    }
+
     const QString line = QString("PDF-Publish abgeschlossen: %1 (%2)").arg(pdfInfo.fileName(), sizeStr);
     logSuccess(line);
     m_status.setPdf(pdfInfo.absoluteFilePath());
@@ -6670,10 +6728,11 @@ void OpenCirtTab::onPdfDonePollTimer() {
             QString("PDF erfolgreich erzeugt:\n\n"
                     "%1\n"
                     "Groesse: %2\n"
-                    "Speicherort: %3")
+                    "Speicherort: %3%4")
             .arg(pdfInfo.fileName())
             .arg(sizeStr)
-            .arg(pdfInfo.absolutePath()));
+            .arg(pdfInfo.absolutePath())
+            .arg(llHinweis));
     }
     
     m_publishedPdfPath.clear();
@@ -6750,7 +6809,12 @@ bool OpenCirtTab::precheckLeistungsstempel(const QStringList& dwgFiles, bool doB
                     .arg(root.relativeFilePath(path), st.anlage.trimmed());
                 switch (st.link) {
                 case OcLlStamp::NoLine:     noLine.children << where; break;
-                case OcLlStamp::NoDevice:   noDevice.children << where; break;
+                case OcLlStamp::NoDevice:
+                    noDevice.children << (st.nearestDistance >= 0
+                        ? QString("%1 (naechstes Geraet: %2, %3 mm vom Linienende)")
+                              .arg(where, st.nearestDevice, OcLl::formatNumber(st.nearestDistance))
+                        : where);
+                    break;
                 case OcLlStamp::NoBasValue: if (!doBas) noBas.children << where; break;
                 case OcLlStamp::Linked:
                     if (st.deviceAks.isEmpty()) noAks.children << where;
@@ -6862,6 +6926,10 @@ void OpenCirtTab::createLeistungslisten(RunCounts& counts) {
         OcLl::Summen summen;
         int stempel = 0;
         int phase = 0;      // 230-V-Verbraucher je ASP reihum ab L1
+        // Eine Gruppe je Gewerk: aufeinanderfolgende Blaetter desselben Gewerks
+        // stehen ohne Leerzeile untereinander, eine Leerzeile nur beim Wechsel
+        // (seit 2.8.0; bis 2.7.2 eine Gruppe je Blatt)
+        QString letztesGewerk;
 
         for (const QString& p : aspSheets.value(aspFolder)) {
             const OcLlScan scan = m_llScans.value(pathKey(p));
@@ -6869,6 +6937,9 @@ void OpenCirtTab::createLeistungslisten(RunCounts& counts) {
                 standortAsp = scan.ortskennzeichen.trimmed();
             }
             if (scan.stamps.isEmpty()) continue;
+            const QString gewerk = scan.gewerk.trimmed().toUpper();
+            const bool neueGruppe = gruppen.isEmpty() || gewerk != letztesGewerk;
+            letztesGewerk = gewerk;
             OcLl::Gruppe gruppe;
             for (const OcLlStamp& st : scan.stamps) {
                 QStringList hinweise;
@@ -6893,7 +6964,8 @@ void OpenCirtTab::createLeistungslisten(RunCounts& counts) {
                               .arg(st.deviceAks, where));
                 }
             }
-            gruppen << gruppe;
+            if (neueGruppe) gruppen << gruppe;
+            else gruppen.last() += gruppe;
         }
         if (gruppen.isEmpty()) {
             stepDone(aspName);
@@ -6901,7 +6973,7 @@ void OpenCirtTab::createLeistungslisten(RunCounts& counts) {
         }
         ++aspCount;
         if (standortAsp.isEmpty()) {
-            log(QString("  %1: kein Schrankblatt (Bauteil ASP-*) gefunden - Standort ASP bleibt leer")
+            log(QString("  %1: kein Schrankblatt (Bauteil ASP-* bzw. ASPnn) gefunden - Standort ASP bleibt leer")
                 .arg(aspName));
         }
 

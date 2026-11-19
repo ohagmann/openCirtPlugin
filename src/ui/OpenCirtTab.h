@@ -509,7 +509,10 @@ private:
     /// Generate DSD file for PUBLISH command. The output (folder, file name)
     /// is written into [Target]; together with PromptForDwfName=FALSE in
     /// [SheetSet Properties] BricsCAD publishes without asking for the file.
-    QString generateDsdFile(const QStringList& orderedDwgs, const QString& outDir, const QString& outName);
+    /// dsdFileName: Name der DSD-Datei im Temp-Ordner (eigene Datei je Publish
+    /// derselben Batch-Instanz, z. B. fuer die Anlagenleistungslisten einzeln)
+    QString generateDsdFile(const QStringList& orderedDwgs, const QString& outDir, const QString& outName,
+                            const QString& dsdFileName = QStringLiteral("OpenCirt_publish.dsd"));
     
     /// Find the Inhaltsverzeichnis sheet template DWG (22 rows preplaced)
     QString findInhaltVorlage();
@@ -625,6 +628,7 @@ private:
     QTimer* m_pdfDoneTimer = nullptr;   ///< Polls for publish-done marker
     QString m_pdfDoneMarkerPath;        ///< Path to completion marker written by SCR
     QString m_publishedPdfPath;         ///< Vergebene Ausgabe-PDF (steht in der DSD, wird ueberwacht)
+    QString m_publishedLlPdfPath;       ///< Anlagenleistungslisten einzeln (<Name>_Anlagenleistungsliste.pdf), leer ohne Listen
     int m_pdfWaitPolls = 0;             ///< geduldete Polls, bis die Datei auf der Platte liegt
     qint64 m_publishPid = 0;            ///< Prozess der Batch-Instanz
     QDateTime m_publishStarted;         ///< Start der Batch-Instanz (fuer Sperrdateien)

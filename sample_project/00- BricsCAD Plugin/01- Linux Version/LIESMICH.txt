@@ -1,11 +1,11 @@
 opencirt-<Version>-v<NN>.lrx - openCirt fuer BricsCAD V26 und V27 unter Linux
 =============================================================================
 
-Stand: Version 2.7.2 (17.11.2026)
-  opencirt-2.7.2-v26.lrx  fuer BricsCAD V26 (gebaut gegen V26.2.08, Qt 6.8.2)
-  opencirt-2.7.2-v27.lrx  fuer BricsCAD V27 (gebaut gegen V27.1.05, Qt 6.10.2)
+Stand: Version 2.8.0 (19.11.2026)
+  opencirt-2.8.0-v26.lrx  fuer BricsCAD V26 (gebaut gegen V26.2.08, Qt 6.8.2)
+  opencirt-2.8.0-v27.lrx  fuer BricsCAD V27 (gebaut gegen V27.1.05, Qt 6.10.2)
 Ein Plugin laedt nur in der BricsCAD-Version, fuer die es gebaut ist.
-Der Dateiname traegt beide Versionen, z.B. opencirt-2.7.2-v26.lrx.
+Der Dateiname traegt beide Versionen, z.B. opencirt-2.8.0-v26.lrx.
 
 Laden
   1. Die Datei an einen festen Ort kopieren, z.B. ~/BricsCAD Plugins/
