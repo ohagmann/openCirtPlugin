@@ -537,6 +537,12 @@ private:
     
     /// Launch BricsCAD PDF publish with DSD file
     void launchPublish(const QStringList& orderedDwgs, const QString& outDir, const QString& outName);
+    /// Eine Batch-Instanz mit genau einem -PUBLISH starten (SCR: -PUBLISH, Marker,
+    /// QUIT) und auf den Marker warten. false, wenn SCR oder Start scheitern.
+    bool startPublishBatch(const QString& dsdPath, const QString& firstDwg,
+                           const QString& markerText, const QString& scrName);
+    /// Erfolgsmeldung des Publish (Haupt-PDF, dazu die Anlagenleistungslisten einzeln)
+    void finishPublishSuccess();
     
 
     // ================================================================
@@ -629,6 +635,9 @@ private:
     QString m_pdfDoneMarkerPath;        ///< Path to completion marker written by SCR
     QString m_publishedPdfPath;         ///< Vergebene Ausgabe-PDF (steht in der DSD, wird ueberwacht)
     QString m_publishedLlPdfPath;       ///< Anlagenleistungslisten einzeln (<Name>_Anlagenleistungsliste.pdf), leer ohne Listen
+    QString m_llDsdPath;                ///< DSD der Anlagenleistungslisten einzeln (zweite Batch-Instanz)
+    QString m_llFirstDwg;               ///< erstes Listenblatt (Startzeichnung der zweiten Batch-Instanz)
+    bool m_llPhase = false;             ///< true: Haupt-PDF fertig, die zweite Batch-Instanz laeuft
     int m_pdfWaitPolls = 0;             ///< geduldete Polls, bis die Datei auf der Platte liegt
     qint64 m_publishPid = 0;            ///< Prozess der Batch-Instanz
     QDateTime m_publishStarted;         ///< Start der Batch-Instanz (fuer Sperrdateien)

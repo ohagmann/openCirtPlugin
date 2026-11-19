@@ -6382,9 +6382,14 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs,
     // Anlagenleistungslisten zusaetzlich als eigene PDF (alle ASP in einer
     // Datei), Name wie die Haupt-PDF mit "_Anlagenleistungsliste" - fuer
     // Bauherren, die die Liste als einzelnes Dokument verlangen (seit 2.8.0).
-    // Dieselbe Batch-Instanz publiziert sie direkt danach.
-    QString llDsdPath;
+    // Eine eigene, zweite Batch-Instanz publiziert sie, wenn die Haupt-PDF
+    // fertig ist: Zwei -PUBLISH in einem Skript sind nicht zuverlaessig - nach
+    // dem zweiten fuehrte BricsCAD V26 das Skript oft nicht weiter (kein Marker,
+    // kein QUIT, die Instanz blieb offen; 2.8.0, 19.11.2026).
     m_publishedLlPdfPath.clear();
+    m_llDsdPath.clear();
+    m_llFirstDwg.clear();
+    m_llPhase = false;
     {
         QStringList llDwgs;
         for (const QString& p : orderedDwgs) {
@@ -6403,9 +6408,12 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs,
                     "(in einem anderen Programm geoeffnet?) - nur die Haupt-PDF wird erzeugt: "
                     + QDir::toNativeSeparators(llPath), "WARN");
             } else {
-                llDsdPath = generateDsdFile(llDwgs, outDir, llName,
-                                            QStringLiteral("OpenCirt_publish_ll.dsd"));
-                if (!llDsdPath.isEmpty()) m_publishedLlPdfPath = llPath;
+                m_llDsdPath = generateDsdFile(llDwgs, outDir, llName,
+                                              QStringLiteral("OpenCirt_publish_ll.dsd"));
+                if (!m_llDsdPath.isEmpty()) {
+                    m_publishedLlPdfPath = llPath;
+                    m_llFirstDwg = llDwgs.first();
+                }
             }
         }
     }
@@ -6419,12 +6427,49 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs,
                     QDir::toNativeSeparators(m_publishedPdfPath) +
                     "\n\nIst die Datei in einem anderen Programm geoeffnet?", false);
         m_publishedPdfPath.clear();
+        m_publishedLlPdfPath.clear();
+        m_llDsdPath.clear();
         return;
     }
-    
-    // Paths for SCR generation
+
+    log(QString("  PDF-Ausgabe: %1").arg(m_publishedPdfPath));
+    if (!m_publishedLlPdfPath.isEmpty()) {
+        log(QString("  Anlagenleistungslisten einzeln: %1 (danach in einer zweiten Batch-Instanz)")
+            .arg(m_publishedLlPdfPath));
+    }
+
+    m_publishStarted = QDateTime::currentDateTime();
+    if (startPublishBatch(dsdPath, orderedDwgs.first(), m_publishedPdfPath,
+                          QStringLiteral("OpenCirt_publish.scr"))) {
+        log(QString("PDF-Publish gestartet in Batch-Instanz (Prozess %1) - Ausgabe: %2")
+            .arg(m_publishPid).arg(QFileInfo(m_publishedPdfPath).fileName()));
+        // Waehrend die Batch-Instanz arbeitet, ist dieses BricsCAD frei; der
+        // Lauf gilt aber erst mit der fertigen PDF als beendet. Knopf, Balken
+        // und Abbrechen fuer die Wartezeit setzt onPublishPdf nach dem Ende
+        // des Laufs (showPublishWaiting).
+        m_status.setPdf(m_publishedPdfPath);
+        m_status.setText(QString("PDF wird in der Batch-Instanz erzeugt (%1 Blaetter)")
+                         .arg(orderedDwgs.size()));
+        m_status.setBricscadFrei(true);
+    } else {
+        logError("BricsCAD Batch-Instanz konnte nicht gestartet werden");
+        m_publishedLlPdfPath.clear();
+        m_llDsdPath.clear();
+    }
+}
+
+/**
+ * @brief Eine Batch-Instanz mit genau einem -PUBLISH.
+ *
+ * SCR: Dialoge aus (FILEDIA=0, CMDECHO=0, EXPERT=5, BACKGROUNDPLOT=0),
+ * -PUBLISH mit der DSD, Marker schreiben, _.QUIT. Aufruf
+ * bricscad /b "first.dwg" "script.scr" im Vorlagenordner des Projekts.
+ * Setzt Marker, Prozessnummer und startet das Warten (onPdfDonePollTimer).
+ */
+bool OpenCirtTab::startPublishBatch(const QString& dsdPath, const QString& firstDwg,
+                                    const QString& markerText, const QString& scrName) {
     QString tempPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    QString scrPath = tempPath + "/OpenCirt_publish.scr";
+    QString scrPath = tempPath + "/" + scrName;
     QString markerPath = tempPath + "/OpenCirt_publish_done.marker";
     
     // Clean old marker
@@ -6443,18 +6488,13 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs,
     scr += "(progn (setvar \"EXPERT\" 5)(princ))\n";
     scr += "(progn (setvar \"BACKGROUNDPLOT\" 0)(princ))\n";
     scr += QString("_.-PUBLISH \"%1\"\n").arg(dsdSlash);
-    if (!llDsdPath.isEmpty()) {
-        QString llDsdSlash = llDsdPath;
-        llDsdSlash.replace("\\", "/");
-        scr += QString("_.-PUBLISH \"%1\"\n").arg(llDsdSlash);
-    }
     scr += "(progn (setvar \"BACKGROUNDPLOT\" 2)(princ))\n";
     scr += "(progn (setvar \"FILEDIA\" 1)(princ))\n";
     scr += "(progn (setvar \"CMDECHO\" 1)(princ))\n";
     scr += "(progn (setvar \"EXPERT\" 0)(princ))\n";
     
     // Vergebener Ausgabe-Pfad in die Markerdatei schreiben (Inhalt: Pfad)
-    QString pdfSlash = m_publishedPdfPath;
+    QString pdfSlash = markerText;
     pdfSlash.replace("\\", "/");
     scr += QString(
         "(progn"
@@ -6474,7 +6514,7 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs,
     QFile scrFile(scrPath);
     if (!scrFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
         logError(QString("SCR-Datei konnte nicht geschrieben werden: %1").arg(scrPath));
-        return;
+        return false;
     }
     QTextStream stream(&scrFile);
     stream << scr;
@@ -6482,7 +6522,6 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs,
     
     // Launch separate BricsCAD batch instance: /b "dwg" "scr"
     QString bricscadExe = QCoreApplication::applicationFilePath();
-    QString firstDwg = orderedDwgs.first();
     // Schreibweise des Betriebssystems; der Aufruf /b "dwg" "scr" ist unter
     // Windows und Linux derselbe
     QString dwgPathWin = QDir::toNativeSeparators(firstDwg);
@@ -6493,12 +6532,7 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs,
     
     log(QString("Starte BricsCAD Batch-Instanz: %1").arg(bricscadExe));
     log(QString("  /b \"%1\" \"%2\"").arg(dwgPathWin, scrPathWin));
-    log(QString("  SCR: FILEDIA=0 -> -PUBLISH%1 -> Marker -> _.QUIT")
-        .arg(llDsdPath.isEmpty() ? QString() : QStringLiteral(" -> -PUBLISH (Anlagenleistungslisten)")));
-    log(QString("  PDF-Ausgabe: %1").arg(m_publishedPdfPath));
-    if (!m_publishedLlPdfPath.isEmpty()) {
-        log(QString("  Anlagenleistungslisten einzeln: %1").arg(m_publishedLlPdfPath));
-    }
+    log(QString("  SCR: FILEDIA=0 -> -PUBLISH -> Marker -> _.QUIT"));
 
     // Arbeitsverzeichnis der Batch-Instanz: der Vorlagenordner des Projekts.
     // Die Blaetter sind Kopien der Vorlagen und tragen deren relative
@@ -6517,30 +6551,15 @@ void OpenCirtTab::launchPublish(const QStringList& orderedDwgs,
     // Prozessnummer merken: damit laesst sich die Batch-Instanz abbrechen und
     // erkennen, ob sie ohne Ergebnis verschwunden ist
     qint64 pid = 0;
-    const QDateTime startedAt = QDateTime::currentDateTime();
-    bool started = QProcess::startDetached(bricscadExe, args, batchWorkDir, &pid);
-    if (started) {
-        log(QString("PDF-Publish gestartet in Batch-Instanz (Prozess %1) - Ausgabe: %2")
-            .arg(pid).arg(QFileInfo(m_publishedPdfPath).fileName()));
-        
-        // Start polling for completion marker. Knopf, Balken und Abbrechen
-        // fuer die Wartezeit setzt onPublishPdf nach dem Ende des Laufs
-        // (showPublishWaiting).
-        m_pdfDoneMarkerPath = markerPath;
-        m_publishPid = pid;
-        m_publishStarted = startedAt;
-        m_publishGonePolls = 0;
-        m_pdfDoneTimer->start();
+    if (!QProcess::startDetached(bricscadExe, args, batchWorkDir, &pid)) return false;
 
-        // Waehrend die Batch-Instanz arbeitet, ist dieses BricsCAD frei; der
-        // Lauf gilt aber erst mit der fertigen PDF als beendet
-        m_status.setPdf(m_publishedPdfPath);
-        m_status.setText(QString("PDF wird in der Batch-Instanz erzeugt (%1 Blaetter)")
-                         .arg(orderedDwgs.size()));
-        m_status.setBricscadFrei(true);
-    } else {
-        logError("BricsCAD Batch-Instanz konnte nicht gestartet werden");
-    }
+    // Start polling for completion marker
+    m_pdfDoneMarkerPath = markerPath;
+    m_publishPid = pid;
+    m_publishGonePolls = 0;
+    m_pdfWaitPolls = 0;
+    m_pdfDoneTimer->start();
+    return true;
 }
 
 bool OpenCirtTab::publishProcessAlive() const {
@@ -6553,6 +6572,9 @@ void OpenCirtTab::endPublishWait() {
     m_pdfDoneMarkerPath.clear();
     m_publishPid = 0;
     m_publishGonePolls = 0;
+    m_llPhase = false;
+    m_llDsdPath.clear();
+    m_llFirstDwg.clear();
     m_btnPublish->setText("PDF publizieren");
     hideProgress();
     updateButtonStates();
@@ -6602,8 +6624,11 @@ void OpenCirtTab::cancelPublish(const QString& reason) {
     }
     // Eine halb geschriebene PDF ist wertlos. BricsCAD schreibt waehrend des
     // Publish zusaetzlich <Name>.pdf.{GUID}.tmp daneben (V27, 2026-11-06).
-    // Das gilt auch fuer die Anlagenleistungslisten einzeln.
-    for (const QString& halb : { m_publishedPdfPath, m_publishedLlPdfPath }) {
+    // Das gilt auch fuer die Anlagenleistungslisten einzeln. Laeuft schon die
+    // zweite Batch-Instanz (Listen einzeln), ist die Haupt-PDF fertig und bleibt.
+    const bool hauptFertig = m_llPhase;
+    const QString hauptName = QFileInfo(m_publishedPdfPath).fileName();
+    for (const QString& halb : { hauptFertig ? QString() : m_publishedPdfPath, m_publishedLlPdfPath }) {
         if (halb.isEmpty()) continue;
         const QFileInfo pdf(halb);
         QStringList reste;
@@ -6627,7 +6652,10 @@ void OpenCirtTab::cancelPublish(const QString& reason) {
     m_publishedPdfPath.clear();
     m_publishedLlPdfPath.clear();
     endPublishWait();
-    const QString line = "PDF publizieren abgebrochen - es wurde keine PDF erzeugt";
+    const QString line = hauptFertig
+        ? QString("PDF publizieren abgebrochen - die PDF %1 ist fertig, die Anlagenleistungslisten "
+                  "einzeln wurden nicht erzeugt").arg(hauptName)
+        : QString("PDF publizieren abgebrochen - es wurde keine PDF erzeugt");
     logError(line);
     finishStatus("abgebrochen", line);
 }
@@ -6653,11 +6681,26 @@ void OpenCirtTab::onPdfDonePollTimer() {
         return;
     }
     
+    // Ausgabe der laufenden Batch-Instanz: erst die Haupt-PDF, danach (zweite
+    // Instanz) die Anlagenleistungslisten einzeln
+    const QString target = m_llPhase ? m_publishedLlPdfPath : m_publishedPdfPath;
+
     if (!QFile::exists(m_pdfDoneMarkerPath)) {
         // Batch-Instanz ohne Marker verschwunden (Absturz, von Hand beendet):
         // sonst wuerde hier endlos gewartet
         if (m_publishPid > 0 && !publishProcessAlive()) {
             if (++m_publishGonePolls >= 3) {
+                if (m_llPhase) {
+                    // Die Haupt-PDF ist fertig, nur die Listen einzeln fehlen
+                    removeStalePublishLocks();
+                    if (QFileInfo::exists(m_publishedLlPdfPath)) QFile::remove(m_publishedLlPdfPath);
+                    log(QString("Anlagenleistungslisten einzeln: die Batch-Instanz hat sich ohne Abschluss "
+                                "beendet - %1 wurde nicht erzeugt")
+                        .arg(QFileInfo(m_publishedLlPdfPath).fileName()), "WARN");
+                    m_publishedLlPdfPath.clear();
+                    finishPublishSuccess();
+                    return;
+                }
                 const bool dialog = interaktiv();
                 removeStalePublishLocks();
                 endPublishWait();
@@ -6665,6 +6708,7 @@ void OpenCirtTab::onPdfDonePollTimer() {
                                      "beendet - die PDF ist nicht (vollstaendig) erzeugt";
                 logError(line);
                 m_publishedPdfPath.clear();
+                m_publishedLlPdfPath.clear();
                 finishStatus("fehler", line);
                 if (dialog) QMessageBox::warning(this, "PDF-Publish", line);
             }
@@ -6674,9 +6718,16 @@ void OpenCirtTab::onPdfDonePollTimer() {
     
     // Marker vorhanden: PUBLISH beendet. Die PDF steht am vergebenen
     // Ausgabe-Pfad; kurz auf das Einlagern auf der Platte warten.
-    QFileInfo pdfInfo(m_publishedPdfPath);
+    QFileInfo pdfInfo(target);
     if (!pdfInfo.exists() || pdfInfo.size() == 0) {
         if (++m_pdfWaitPolls > 45) {  // ~90 Sekunden Gnadenfrist
+            if (m_llPhase) {
+                log(QString("Anlagenleistungslisten einzeln: %1 wurde nicht gefunden")
+                    .arg(QDir::toNativeSeparators(m_publishedLlPdfPath)), "WARN");
+                m_publishedLlPdfPath.clear();
+                finishPublishSuccess();
+                return;
+            }
             const bool dialog = interaktiv();
             endPublishWait();
             const QString line = "PDF-Publish beendet, aber die Ausgabedatei wurde unter "
@@ -6691,10 +6742,37 @@ void OpenCirtTab::onPdfDonePollTimer() {
                     "gefunden. Bitte pruefen, ob sie an einem anderen Ort liegt.");
             }
             m_publishedPdfPath.clear();
+            m_publishedLlPdfPath.clear();
         }
         return;
     }
-    
+
+    // Haupt-PDF fertig: die Anlagenleistungslisten einzeln in einer zweiten
+    // Batch-Instanz (wieder genau ein -PUBLISH je Skript)
+    if (!m_llPhase && !m_llDsdPath.isEmpty() && !m_publishedLlPdfPath.isEmpty()) {
+        QFile::remove(m_pdfDoneMarkerPath);
+        m_llPhase = true;
+        log(QString("PDF fertig: %1 - Anlagenleistungslisten einzeln folgen in einer zweiten Batch-Instanz")
+            .arg(pdfInfo.fileName()));
+        m_status.setText(QString("Anlagenleistungslisten einzeln werden erzeugt (%1)")
+                         .arg(QFileInfo(m_publishedLlPdfPath).fileName()));
+        if (startPublishBatch(m_llDsdPath, m_llFirstDwg, m_publishedLlPdfPath,
+                              QStringLiteral("OpenCirt_publish_ll.scr"))) {
+            log(QString("Anlagenleistungslisten einzeln: Batch-Instanz gestartet (Prozess %1)")
+                .arg(m_publishPid));
+        } else {
+            log("Anlagenleistungslisten einzeln: die zweite Batch-Instanz liess sich nicht starten", "WARN");
+            m_publishedLlPdfPath.clear();
+            finishPublishSuccess();
+        }
+        return;
+    }
+
+    finishPublishSuccess();
+}
+
+void OpenCirtTab::finishPublishSuccess() {
+    QFileInfo pdfInfo(m_publishedPdfPath);
     // === Publish complete! ===
     const bool dialog = interaktiv();
     endPublishWait();
@@ -6707,7 +6785,7 @@ void OpenCirtTab::onPdfDonePollTimer() {
         sizeStr = QString("%1 KB").arg(bytes / 1024.0, 0, 'f', 0);
     }
     
-    // Anlagenleistungslisten einzeln: entstehen im selben Skript vor dem Marker
+    // Anlagenleistungslisten einzeln (zweite Batch-Instanz)
     QString llHinweis;
     if (!m_publishedLlPdfPath.isEmpty()) {
         const QFileInfo llInfo(m_publishedLlPdfPath);
