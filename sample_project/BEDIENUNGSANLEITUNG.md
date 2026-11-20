@@ -34,6 +34,7 @@ openCirt automatisiert die Erstellung von GA-Planungsunterlagen in BricsCAD. Aus
 - **Deckblätter** für jede Hierarchie-Ebene (Projekt, Los, ASP, Gewerk, Anlage)
 - **Inhaltsverzeichnis** mit automatischer Seitennummerierung
 - **PDF-Gesamtdokument** als Multi-Sheet-PDF
+- **Listen** als CSV: Datenpunkt-/IO-Belegungsliste und Feldgeräteliste mit Summe je Geräteart
 
 Der gesamte Ablauf von der Schema-Zeichnung bis zum fertigen PDF-Planungspaket ist automatisiert.
 
@@ -82,6 +83,7 @@ Projektname/
 ├── 00- BricsCAD Plugin/        Plugin-Binary (nur Referenz)
 ├── 01- Referenzen/             Konfigurationsdateien
 │   ├── BAS.csv                 BAS-Aufbau (Segmente)
+│   ├── Feldgeraete.csv         Geräteart, Kategorie, Lieferung je Block/BMK (Feldgeräteliste, Abschnitt 11)
 │   ├── GA_FL_VORLAGE.ods       Datenpunkt-Referenztabelle
 │   ├── Erstellliste_VORLAGE.csv Erstellliste mit allen Spalten und Beispielzeilen (Abschnitt 3.3)
 │   ├── plankopfdaten.csv       Plankopf-Stammdaten
@@ -403,7 +405,7 @@ Die GA-FL-Erstellung ist der Kern von openCirt. Sie läuft in drei Phasen:
 
 - Aus allen Quell-DWGs werden die Datenpunkte gelesen (OC_BMK, OC_AKS, OC_REF_DP, OC_BAS_DP, Funktionswerte, ...).
 - Die Daten werden als CSV-Dateien im temp-Verzeichnis gespeichert, je Projekt in einem eigenen Ordner (`OpenCirt_extract/<Projektname>_<Kennung>`). Dort liegen auch die Protokolle `extractdp_log.txt` und `fillgafl_log.txt`.
-- Die Sensorliste greift nicht auf diese Dateien zurück: „Sensorliste erstellen" liest die Zeichnungen des geladenen Projekts selbst neu ein. BMK und BAS stehen in der Liste so, wie der letzte Lauf von „Projekt erstellen" sie in die Zeichnungen geschrieben hat.
+- Die Feldgeräteliste greift nicht auf diese Dateien zurück: „Feldgeräteliste erstellen" liest die Zeichnungen des geladenen Projekts selbst neu ein. BMK und BAS stehen in der Liste so, wie der letzte Lauf von „Projekt erstellen" sie in die Zeichnungen geschrieben hat.
 
 ### 8.2 Phase 2: GA-FL-Blätter erzeugen
 
@@ -541,7 +543,7 @@ Auf **„Projekt erstellen"** klicken und die Warnung bestätigen. Der Prozess l
 
 ### Lauf abbrechen (seit 2.5.0)
 
-Während „Projekt erstellen", „Projekt aufbauen", „Sensorliste erstellen" und „PDF publizieren" steht rechts neben dem Fortschrittsbalken der Knopf **„Abbrechen"**. Der Lauf hält nach der Zeichnung an, die gerade bearbeitet wird; diese wird noch fertig gespeichert, keine Zeichnung bleibt halb geschrieben. Das Projekt ist danach unvollständig (z. B. fehlen GA-FL- oder Summenblätter, bzw. `05- Projekt Zeichnungen` ist nur teilweise neu aufgebaut) – den Lauf später neu starten. Eine Meldung und das Protokoll nennen den Stand.
+Während „Projekt erstellen", „Projekt aufbauen", „Feldgeräteliste erstellen" und „PDF publizieren" steht rechts neben dem Fortschrittsbalken der Knopf **„Abbrechen"**. Der Lauf hält nach der Zeichnung an, die gerade bearbeitet wird; diese wird noch fertig gespeichert, keine Zeichnung bleibt halb geschrieben. Das Projekt ist danach unvollständig (z. B. fehlen GA-FL- oder Summenblätter, bzw. `05- Projekt Zeichnungen` ist nur teilweise neu aufgebaut) – den Lauf später neu starten. Eine Meldung und das Protokoll nennen den Stand.
 
 Bei „PDF publizieren" bricht der Knopf das Inhaltsverzeichnis und das Lesen der Lesezeichen ab; plottet bereits die zweite BricsCAD-Instanz, wird sie beendet, die halb geschriebene PDF und ihre Sperrdateien werden entfernt.
 
@@ -562,11 +564,11 @@ Die Auftragsdatei ist JSON, z. B.
 
 openCirt übernimmt Projekt und Haken sichtbar ins Fenster und startet den Lauf wie nach einem Klick. Rückfragen beantwortet der Auftrag (`fehlende_referenzen`, `stempel_ohne_geraet`: `"weiter"` oder `"abbrechen"`, ohne Angabe gilt `abbrechen`); die Optionen und das PDF-Ziel haben keine Vorgabe und müssen genannt werden. Der Aufruf kehrt sofort mit `OK: …` oder `FEHLER: …` zurück; abgelehnt wird, solange ein Lauf läuft oder ein Dialog von openCirt offen ist, wenn Zeichnungen des Projekts geöffnet sind oder die PDF schon existiert und `ersetzen` nicht `true` ist.
 
-Seit 2.6.0 gehen auch die Listen als Auftrag – wie die Knöpfe „IO-Liste erstellen", „Sensorliste erstellen" und „Export Testdaten", ohne Dialoge und Meldungsfenster:
+Seit 2.6.0 gehen auch die Listen als Auftrag – wie die Knöpfe „IO-Liste erstellen", „Feldgeräteliste erstellen" (seit 2.9.0, ersetzt `sensorliste`) und „Export Testdaten", ohne Dialoge und Meldungsfenster:
 
     { "aktion": "io_liste", "projekt": "<Projektordner>", "filter": "HW" }
 
-    { "aktion": "sensorliste", "projekt": "<Projektordner>" }
+    { "aktion": "feldgeraeteliste", "projekt": "<Projektordner>" }
 
     { "aktion": "testdaten", "projekt": "<Projektordner>",
       "geoeffnete_blaetter": "abbrechen" }
@@ -584,6 +586,42 @@ Seit 2.7.0 geht auch „Projekt aufbauen“ als Auftrag:
 - Sind Zeichnungen des Projekts geöffnet oder liegen Sperrdateien dort, wird nichts gelöscht; das Protokoll nennt die Dateien. Im Status stehen danach der Pfad des Aufbau-Logs (`ausgabe`) und die Zähler (geplant, gelöscht, erstellt, nur kopiert, Fehler, Warnungen).
 
 Während jedes Laufs – per Knopf oder Auftrag – stehen Stand und Protokoll im Temp-Ordner: `OpenCirt_status.json` (Aktion, Zustand `laeuft`/`fertig`/`fehler`/`abgebrochen`, Abschnitt mit „Schritt von Anzahl", Zähler, Ergebnis, bei Listen-Aufträgen unter `ausgabe` die erzeugte Datei bzw. der Ordner der Testdaten) und `OpenCirt_protokoll.txt`. Eine leere Datei `OpenCirt_abbrechen` im Temp-Ordner wirkt wie ein Klick auf „Abbrechen".
+
+### Feldgeräteliste (seit 2.9.0)
+
+**„Feldgeräteliste erstellen"** listet alle Feldgeräte des Projekts – auch die, die die GA nicht liefert oder nicht ansteuert, etwa die Umwälzpumpe der Heizung, die Brandschutzklappen der Lüftung oder die Präsenzmelder der Elektro. Die Zeichnungen werden nur gelesen, nicht geändert; BMK und BAS stehen in der Liste so, wie der letzte Lauf von „Projekt erstellen" sie geschrieben hat. Sie ersetzt die frühere Sensorliste (Sensoren = Filter Kategorie „Sensor").
+
+- **Feldgerät ist jeder Block mit gefülltem `OC_AKS`** im Modellbereich einer Quellzeichnung, mit oder ohne aktiven Datenpunkt. Ein leeres `OC_AKS` ist kein Gerät; hat so ein Block aktive Datenpunkte, nennt das Protokoll Blatt und Block – dann fehlt `OC_AKS` in der Vorlage.
+- **Ausgabe** in `06- Plot`:
+  - `Feldgeraeteliste.csv`: ein Gerät je Zeile, sortiert nach Los, ASP, Gewerk, Anlage, Blatt und auf dem Blatt von links nach rechts. Spalten: Pos., Los, ASP, Gewerk, Anlage, Ort (Ortskennzeichen aus dem Plankopf, in der Raumautomation der Raum), BMK, BAS, Bezeichnung, Geräteart, Ausführung, Kategorie, Lieferung, Produkt, Blatt, Block.
+  - `Feldgeraeteliste_Summe.csv`: Anzahl je Kategorie, Geräteart, Ausführung und Lieferung – je ASP, je Los und gesamt (leere Zelle = keins).
+- **BAS:** der des ersten aktiven Datenpunkts, gekürzt nach `OC_AKS`. Geräte ohne aktiven Datenpunkt bekommen ihn aus `BAS.csv` wie bei der BAS-Generierung (nur für die Liste).
+
+**Was für ein Gerät es ist, steht in `01- Referenzen/Feldgeraete.csv`** (Semikolon, UTF-8, Zeile 1 = Kopf):
+
+    Block:;BMK:;Funktion:;Geräteart:;Kategorie:;Lieferung:;Darstellung in Liste:;Ausführung Pflicht:
+    ;TVL;;Tauchtemperaturfühler;Sensor;GA;ja;ja
+    ;PPE;;Umwälzpumpe;Motor;HZG;ja;
+    ;ZUV;REP;Reparaturschalter;Schalter;ELT;ja;
+    OC_VORLAGE_3W_VENTIL_HZG;;;3-Wege-Regelventil mit Antrieb;Ventil;GA;ja;
+    OC_VORLAGE_2W_VENTIL_HZG;;;2-Wege-Regelventil mit Antrieb;Ventil;GA;ja;
+    ;GRF;;Anlagenbild;-;-;nein;
+
+- **Block** ohne Versionsnummer (`_V4`, `_V_2` am Ende entfallen); bei anonymen Kopien parametrischer Blöcke (`*U…`) gilt der Name der Definition. **BMK** ohne Nummer (`PPE01` → `PPE`, `BSK-01` → `BSK`). Groß-/Kleinschreibung egal.
+- **Zuordnung:** erst Block + BMK, dann nur Block (BMK leer), dann nur BMK (Block leer). Der Block trennt Geräte mit gleichem Kürzel (2- und 3-Wege-Ventil heißen beide `VEN`), das BMK teilt allgemeine Blöcke auf (ein Fühlerblock für Vorlauf-, Außen-, Druckfühler …). Ventilblöcke tragen deshalb 2W/3W im Namen.
+- **Funktion:** Eine Zeile mit Funktion macht aus einem aktiven Datenpunkt des Geräts, dessen Funktionskennung mit diesen Buchstaben beginnt (`REP01`, `WM_01`), eine weitere Zeile – z. B. den Reparaturschalter am Ventilator. BAS ist dann der des Datenpunkts.
+- **Darstellung in Liste** `nein` nimmt Blöcke heraus (Anlagenbild, virtuelle Datenpunkte, Schaltschrank- und Fremdanlagenmeldungen); leer gilt als `ja`.
+- **Lieferung** gilt je Geräteart für das ganze Projekt (z. B. alle Brandschutzklappen von RLT).
+- **Ausführung Pflicht** `ja`: Das Gerät braucht eine Ausführung aus einem Feldgeräte-Stempel (unten). Fehlt sie, steht „(Ausführung fehlt)“ in Liste und Summe und das Protokoll nennt Blatt und BMK. Leer gilt als `nein`; die Spalte darf fehlen.
+
+**Ausführung aus Feldgeräte-Stempeln.** Wo dasselbe Gerät in verschiedenen Ausführungen vorkommt, die das LV getrennt zählen muss – Klappendrehmoment 2/5/10 Nm, Tauchhülsenlänge 150/300 mm und Material, Fühlerlänge im Kanal –, bekommt das Gerät in der Vorlage einen Stempel:
+
+- Stempel wie bei den Auslegungsdaten (z. B. `Freier_Stempel_16_Zeilen_schmal_PAR_V3`, nur die nötigen Zeilen sichtbar) mit `FG` in `OC_LISTE` und Nummer `[n]` in `OC_ANLAGE`.
+- Eine Linie (LINE oder Polylinie) auf dem Layer **`GA-Feldgeraetestempel-Verbindung`** vom Stempel zum Gerät, wie beim Leistungsstempel (Ende höchstens 0,5 mm von der sichtbaren Geometrie). **Ein Stempel darf mehrere Linien haben**, z. B. zu Außen- und Fortluftklappe gleicher Größe.
+- Die Werte kommen über eine Stempelzeile der Erstellliste: `[n] AUL/FOL-Klappen`, `OC_LISTE` = `FG`, `OC_TEXT_Z1_S1` = `Antrieb [Nm]`, `OC_TEXT_Z1_S2` = `5`. Ohne Stempelzeile gilt, was in der Vorlage steht (z. B. eine Vorgabe 5 Nm). Eine Stempelzeile ohne Stempel in der Vorlage bricht „Projekt aufbauen“ ab.
+- Ausführung = alle sichtbaren Stempelzeilen mit Wert: Bezeichnung und Wert, eine Einheit in eckigen Klammern hinter dem Wert – „Antrieb [Nm]“ + „5“ ergibt „Antrieb 5 Nm“, zwei Zeilen „Tauchhülse 150 mm, Material Messing“. Ausgeblendete Zeilen zählen nicht. Die Summe zählt je Ausführung; gleiche Schreibweise verwenden.
+- Ein Stempel kann zugleich in der Anlagenleistungsliste stehen (`OC_LISTE` = `LL FG`); die Linien je Liste liegen dann auf dem jeweiligen Layer.
+- Geräte ohne passenden Eintrag stehen mit Geräteart `?` in der Liste; das Protokoll nennt Block und BMK so, wie sie in die Referenz gehören. Kommt ein BMK in derselben Anlage am selben Ort mehrmals vor, meldet das Protokoll das ebenfalls.
 
 ### Export Testdaten
 
@@ -642,6 +680,10 @@ Wenn die Reihenfolge der Attribute im Eigenschaftenfenster durcheinander ist (z.
 openCirt steht unter der Business Source License 1.1 (BSL 1.1). Nutzung für interne Zwecke und kommerzielle Projekte ist erlaubt. Verkauf als eigenständiges Produkt und SaaS-Angebote sind untersagt. Ab 2030-03-02 wird die Software unter AGPLv3 verfügbar.
 
 Siehe [LICENSE](../LICENSE) und [ADDITIONAL_TERMS](../ADDITIONAL_TERMS) im Repository.
+
+> **openCirt comes with ABSOLUTELY NO WARRANTY**, to the extent permitted by applicable law. Use at your own risk; check all results before you rely on them.
+>
+> **openCirt wird ohne jegliche Gewährleistung bereitgestellt**, soweit gesetzlich zulässig. Die Nutzung erfolgt auf eigenes Risiko; alle Ergebnisse vor Verwendung prüfen und vor jedem Stapellauf Sicherungen anlegen. Die Haftung für Vorsatz und grobe Fahrlässigkeit bleibt unberührt.
 
 ---
 

@@ -5,21 +5,26 @@ Parameters
 Licensor:             Oliver Hagmann
 Licensed Work:        Batchtool / openCirt - BricsCAD Plugin for Batch Processing and BMS planing
                       Copyright (c) 2025 Oliver Hagmann
-Additional Use Grant: You may use the Licensed Work for internal business
-                      purposes, including commercial planning and engineering
-                      projects. You may provide services related to the
-                      Licensed Work, such as training, integration, consulting,
-                      and custom development. You may redistribute the Licensed
-                      Work in source or binary form.
+Additional Use Grant: You may make production use of the Licensed Work,
+                      including for internal business purposes and commercial
+                      planning and engineering projects. You may provide
+                      services related to the Licensed Work, such as training,
+                      integration, consulting, and custom development. You may
+                      redistribute the Licensed Work in source or binary form
+                      under this License.
 
-                      You may NOT:
-                      (a) sell the Licensed Work as a standalone product or as
-                          a primary component of a paid software bundle;
-                      (b) offer the Licensed Work as a hosted or managed
-                          service (SaaS);
-                      (c) create proprietary derivative works (any derivative
-                          work must be made available under the same or a
-                          compatible open-source license).
+                      This Additional Use Grant does not include:
+                      (a) selling the Licensed Work, or a work derived from
+                          it, as a standalone product or as a primary
+                          component of a paid software bundle;
+                      (b) offering the Licensed Work, or a work derived from
+                          it, as a hosted or managed service (SaaS).
+
+                      For clarity: derivative works of the Licensed Work
+                      remain subject to this License (and, after the Change
+                      Date, to the Change License); this sentence is a
+                      clarification and grants or restricts nothing beyond
+                      this License.
 
 Change Date:          2030-03-02
 Change License:       GNU Affero General Public License v3.0 or later
@@ -67,6 +72,33 @@ AN "AS IS" BASIS. LICENSOR HEREBY DISCLAIMS ALL WARRANTIES AND CONDITIONS,
 EXPRESS OR IMPLIED, INCLUDING (WITHOUT LIMITATION) WARRANTIES OF
 MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, AND
 TITLE.
+
+MariaDB hereby grants you permission to use this License's text to license
+your works, and to refer to it using the trademark "Business Source License",
+as long as you comply with the Covenants of Licensor below.
+
+-----------------------------------------------------------------------------
+
+Covenants of Licensor
+
+In consideration of the right to use this License's text and the "Business
+Source License" name and trademark, Licensor covenants to MariaDB, and to all
+other recipients of the licensed work to be provided by Licensor:
+
+1. To specify as the Change License the GPL Version 2.0 or any later version,
+   or a license that is compatible with GPL Version 2.0 or a later version,
+   where "compatible" means that software provided under the Change License can
+   be included in a program with software provided under GPL Version 2.0 or a
+   later version. Licensor may specify additional Change Licenses without
+   limitation.
+
+2. To either: (a) specify an additional grant of rights to use that does not
+   impose any additional restriction on the right granted in this License, as
+   the Additional Use Grant; or (b) insert the text "None".
+
+3. To specify a Change Date.
+
+4. Not to modify this License in any other way.
 
 -----------------------------------------------------------------------------
 
