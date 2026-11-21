@@ -1,6 +1,6 @@
 # openCirt – GA-Planungssoftware für BricsCAD
 
-Ein BRX-Plugin (C++/Qt6) zur Erstellung von Planungsunterlagen für die Gebäudeautomation (nach VDI 3814) in BricsCAD V27 unter Windows und Linux. Aus Schema-Zeichnungen mit standardisierten Symbolen entstehen Betriebsmittelkennzeichen, BAS-Adressen, GA-Funktionslisten, Summenblätter, Deckblätter, Inhaltsverzeichnis, Datenpunkt- und Sensorlisten und das PDF-Gesamtdokument – aus einem Fenster heraus, ohne die Zeichnungen einzeln zu öffnen. openCirt ist DIE freie GA-Planungssoftware für alle - kostenlos, hocheffizient und einfach zu bedienen.
+Ein BRX-Plugin (C++/Qt6) zur Erstellung von Planungsunterlagen für die Gebäudeautomation (nach VDI 3814) in BricsCAD V27 unter Windows und Linux. Aus Schema-Zeichnungen mit standardisierten Symbolen entstehen Betriebsmittelkennzeichen, BAS-Adressen, GA-Funktionslisten, Summenblätter, Deckblätter, Inhaltsverzeichnis, Datenpunkt- und Feldgerätelisten und das PDF-Gesamtdokument – aus einem Fenster heraus, ohne die Zeichnungen einzeln zu öffnen. openCirt ist DIE freie GA-Planungssoftware für alle - kostenlos, hocheffizient und einfach zu bedienen.
 
 Bis Version 1.7.3 war openCirt ein Tab im Plugin batchTool/openCirt. Seit 2.0.0 sind es zwei Plugins: **openCirt** (dieses Repository) und **[batchTool](https://github.com/ohagmann/batchToolPlugin)** für die Stapelverarbeitung beliebiger DWG-Dateien (Text, Attribute, Layer, LISP). Beide lassen sich gleichzeitig in BricsCAD laden.
 
@@ -24,7 +24,7 @@ Ein Fenster, oben der Projektordner, darunter die Funktionen:
 - **Projekt bereinigen** – temporäre Dateien und Sicherungskopien im Zeichnungsordner löschen
 - **PDF publizieren** – Multi-Sheet-PDF mit Inhaltsverzeichnis
 - **IO-Liste erstellen** – Datenpunktliste bzw. IO-Belegungsliste als CSV
-- **Sensorliste erstellen** – Fühler und Sensoren aus den GA-FL-Daten als CSV
+- **Feldgeräteliste erstellen** – alle Feldgeräte (Blöcke mit `OC_AKS`, auch ohne Datenpunkt) als CSV, dazu die Summe je Geräteart
 - **Export Testdaten** – die fertigen GA-FL-Blätter als JSON für die automatisierte Prüfung von AKS/BAS und DP-Funktionen
 
 Das Protokoll im unteren Teil des Fensters ist die einzige Ausgabe; Dialoge erscheinen nur für Rückfragen, Fehler und die Zusammenfassung eines Laufs.
@@ -194,7 +194,7 @@ Die eigentliche Projekterstellung läuft über einen einzigen Knopf – Plankopf
 - **Projekt bereinigen** – temporäre Dateien und Backups im Zeichnungsordner löschen (`*.bak`, `*.dwl`, `*.dwl2`, `*.sv$`, `*.ac$`, `*.tmp`, `*.log`)
 - **PDF publizieren** – DSD-basierter Multi-Sheet-PDF-Export inkl. Inhaltsverzeichnis (22 Einträge pro Seite, Plankopf aus `plankopfdaten.csv`). Das Plotten läuft in einer eigenen Batch-Instanz von BricsCAD
 - **IO-Liste erstellen** – Export als CSV-Datei nach `06- Plot` (Referenz: `iomodule.csv`). Im Dialog wird nach Integrationsart gefiltert (Attribut `OC_INTEGRATIONSART_DP_n`): leer = alle Datenpunkte (`Datenpunktliste.csv`), `HW` = SPS-/DDC-Belegungsliste mit Modul- und Kanalzuordnung (`IO-Belegungsliste.csv`), `BUS;SMI` = mehrere Arten (`Datenpunktliste_BUS-SMI.csv`). Die Integrationsart steht als eigene Spalte in der Liste; *Modul-Typ* wird nur für HW-Zeilen gefüllt
-- **Sensorliste erstellen** – Keyword-Matching gegen Blockattribute (Referenz: `sensor.csv`), Ausgabe als `Sensorliste.csv` nach `06- Plot`
+- **Feldgeräteliste erstellen** – jeder Block mit gefülltem `OC_AKS` ist ein Feldgerät, mit oder ohne aktiven Datenpunkt. Geräteart, Kategorie und Lieferung kommen aus `Feldgeraete.csv` (Zuordnung über Blockname ohne Version und BMK ohne Nummer; Spalte Funktion macht aus einem Datenpunkt ein eigenes Gerät, z. B. den Reparaturschalter). Die Ausführung (Klappendrehmoment, Tauchhülsenlänge …) kommt aus Stempeln mit `FG` in `OC_LISTE`, verbunden über Linien auf `GA-Feldgeraetestempel-Verbindung`; mit „Ausführung Pflicht“ meldet die Liste Geräte ohne Ausführung. Ausgabe nach `06- Plot`: `Feldgeraeteliste.csv` (ein Gerät je Zeile, nach Los/ASP/Gewerk/Anlage) und `Feldgeraeteliste_Summe.csv` (Anzahl je Geräteart und Lieferung, je ASP, Los und gesamt). Ersetzt seit 2.9.0 die Sensorliste
 - **Export Testdaten** – liest die fertigen GA-FL-Blätter (gespeicherter Stand, ohne Editor) und schreibt je Blatt eine JSON-Datei nach `08- Tests/Test <JJJJ-MM-TT_hhmm>/01- JSON Dumps/`, im selben Format wie der frühere LISP-Dump `OC_GENDUMP`; dazu `manifest.json` im Lauf-Ordner (openCirt-Version, Zeitpunkt, Blattliste mit SHA-256). Geprüft wird danach mit `08- Tests/00- Engine/oc_audit_gafl.py`
 
 Die Listen sind CSV-Dateien in UTF-8 mit BOM, Trennzeichen Semikolon, Zeilenende CRLF. Zeile 1 ist die Kopfzeile. LibreOffice und Excel öffnen sie direkt; eine Vorlage ist nicht nötig.
@@ -225,10 +225,10 @@ Die Bedienungsanleitung mit Projektstruktur, Erstellliste, Symbolen und allen Sc
 │   │   ├── BAS.csv             BAS-Konfiguration
 │   │   ├── GA_FL_VORLAGE.ods   GA-FL Vorlage
 │   │   ├── Erstellliste_VORLAGE.csv Erstellliste mit allen Spalten und Beispielzeilen
+│   │   ├── Feldgeraete.csv     Geräteart, Kategorie, Lieferung je Block/BMK (Feldgeräteliste)
 │   │   ├── iomodule.csv        IO-Modul-Referenzdaten
 │   │   ├── opencirt_config.json Projektkonfiguration
-│   │   ├── plankopfdaten.csv   Plankopf-Attribute
-│   │   └── sensor.csv          Sensor-Referenzdaten
+│   │   └── plankopfdaten.csv   Plankopf-Attribute
 │   ├── 02- Skripte/            LISP-Skripte der Schritte des Gesamtlaufs bis Version 1.6 – heute Referenz für die Übertragung nach C++ (core/OpenCirtEngine)
 │   ├── 03- Blockbibliothek/    DWG-Blockvorlagen
 │   ├── 04- Vorlagen/
@@ -246,7 +246,10 @@ Die Bedienungsanleitung mit Projektstruktur, Erstellliste, Symbolen und allen Sc
     ├── windows_fix.h           Qt 6.8+ / Windows SDK Kompatibilität
     ├── brx_force_include.h     BRX Platform-Header
     ├── core/
-    │   ├── OpenCirtEngine.cpp/h    Schritte des Gesamtlaufs auf der Side-Database (BMK, BAS, Extraktion, GA-FL, Textbreiten)
+    │   ├── OpenCirtEngine.cpp/h    Schritte des Gesamtlaufs auf der Side-Database (BMK, BAS, Extraktion, GA-FL, Textbreiten, Leistungsstempel, Feldgeräte lesen)
+    │   ├── Feldgeraeteliste.cpp/h  Feldgeräteliste: Referenz Feldgeraete.csv, Zuordnung, Summe
+    │   ├── Leistungsliste.cpp/h    Anlagenleistungsliste aus den Leistungsstempeln
+    │   ├── OcAuftrag.cpp/h         Aufträge von außen, Laufstatus
     │   ├── ProjectBuilder.cpp/h    Projektaufbau aus der Erstellliste
     │   └── TextAlignment.h         Lage ausgerichteter Texte (Unterschied BricsCAD Windows/Linux)
     ├── mfc_stubs/              Leere MFC/ATL-Stubs (Qt-basiert, kein MFC; nur Windows)
@@ -258,7 +261,6 @@ Die Bedienungsanleitung mit Projektstruktur, Erstellliste, Symbolen und allen Sc
     │   ├── BasConfigDialog.cpp/h   Dialog „BAS konfigurieren"
     │   └── Theming.cpp/h           Hell-/Dunkelthema aus BricsCAD COLORTHEME
     └── utils/
-        ├── SensorKeywordLoader.cpp/h   Keyword-Abgleich für die Sensorliste
         └── CsvListWriter.cpp/h         Listen als CSV schreiben
 ```
 

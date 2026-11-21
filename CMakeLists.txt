@@ -267,7 +267,7 @@ set(PLUGIN_SOURCES
     src/ui/BasConfigDialog.cpp
     src/ui/SeitennamenConfigDialog.cpp
     src/ui/Theming.cpp
-    src/utils/SensorKeywordLoader.cpp
+    src/core/Feldgeraeteliste.cpp
     src/utils/CsvListWriter.cpp
 )
 
@@ -283,7 +283,7 @@ set(PLUGIN_HEADERS
     src/ui/BasConfigDialog.h
     src/ui/SeitennamenConfigDialog.h
     src/ui/Theming.h
-    src/utils/SensorKeywordLoader.h
+    src/core/Feldgeraeteliste.h
     src/utils/CsvListWriter.h
 )
 

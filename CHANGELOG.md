@@ -5,6 +5,34 @@ Alle wesentlichen Änderungen am openCirt-Plugin werden in dieser Datei dokument
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei reinen Änderungen an Vorlagen, LISP-Skripten, Dokumentation oder Repo-Konfiguration.
 
+## [2.9.0] - 2026-11-20
+
+### Added
+- **Feldgeräteliste.** Der Knopf „Feldgeräteliste erstellen“ liest alle Quellzeichnungen (nur lesend, wie bisher die Sensorliste) und schreibt nach `06- Plot`:
+  - `Feldgeraeteliste.csv` – jedes Feldgerät eine Zeile, in der Reihenfolge Los, ASP, Gewerk, Anlage, Blatt und auf dem Blatt von links nach rechts. Spalten: Pos., Los, ASP, Gewerk, Anlage, Ort (Ortskennzeichen des Plankopfs), BMK, BAS, Bezeichnung, Geräteart, Ausführung, Kategorie, Lieferung, Produkt, Blatt, Block.
+  - `Feldgeraeteliste_Summe.csv` – Anzahl je Kategorie, Geräteart, Ausführung und Lieferung, je ASP, je Los und gesamt (Kreuztabelle, leere Zelle = keins).
+  - **Feldgerät ist jeder Block mit gefülltem `OC_AKS`** im Modellbereich – mit oder ohne aktiven Datenpunkt, also auch Geräte, die die GA nicht liefert oder nicht ansteuert (Umwälzpumpe der Heizung, Brandschutzklappe der Lüftung, Präsenzmelder der Elektro). Ein leeres `OC_AKS` ist kein Gerät; hat so ein Block aktive Datenpunkte, nennt das Protokoll Blatt und Block (Fehler in der Vorlage).
+  - **Was für ein Gerät es ist, sagt `01- Referenzen/Feldgeraete.csv`** (Spalten `Block`, `BMK`, `Funktion`, `Geräteart`, `Kategorie`, `Lieferung`, `Darstellung in Liste`). Zugeordnet wird über den Blocknamen ohne Versionsnummer und das BMK ohne Nummer, in der Reihenfolge Block + BMK, nur Block, nur BMK. Bei anonymen Kopien parametrischer Blöcke (`*U…`) gilt der Name der Definition. So lassen sich Geräte trennen, die dasselbe Kürzel tragen (2- und 3-Wege-Ventil), und allgemeine Blöcke über das Kürzel aufteilen (ein Fühlerblock für alle Fühlerarten).
+  - **Funktion:** Eine Zeile mit Funktion (z. B. `WM` oder `REP`) macht aus einem aktiven Datenpunkt des Geräts, dessen Funktionskennung so beginnt, eine eigene Zeile – z. B. den Reparaturschalter am Ventilator. BAS dieser Zeile ist der des Datenpunkts.
+  - **Ausführung aus Feldgeräte-Stempeln.** Ein Stempel (Block mit „STEMPEL“ im Namen, z. B. `Freier_Stempel_16_Zeilen_schmal_PAR_V3`) mit `FG` in `OC_LISTE` beschreibt die Ausführung der Geräte, zu denen eine Linie auf dem Layer `GA-Feldgeraetestempel-Verbindung` führt – z. B. Klappendrehmoment oder Tauchhülsenlänge und -material. Die Ausführung sind die sichtbaren Stempelzeilen mit Wert, Bezeichnung und Wert, eine Einheit in eckigen Klammern wandert hinter den Wert („Antrieb [Nm]“ + „5“ → „Antrieb 5 Nm“); mehrere Zeilen mit Komma („Tauchhülse 150 mm, Material Messing“). Ausgeblendete Zeilen parametrischer Stempel zählen nicht. Ein Stempel darf mehrere Linien haben (z. B. Außen- und Fortluftklappe gleicher Größe). Die Werte kommen wie bei jedem Stempel über eine Stempelzeile `[n]` der Erstellliste; fehlt sie, gilt, was in der Vorlage steht. Die Summe trennt nach Ausführung. Stempel ohne Linie, Linien ohne Gerät und Geräte an zwei Stempeln nennt das Protokoll.
+  - **Spalte `Ausführung Pflicht`** in `Feldgeraete.csv`: `ja` = das Gerät braucht eine Ausführung aus einem Feldgeräte-Stempel. Fehlt sie, steht in Liste und Summe „(Ausführung fehlt)“, und das Protokoll nennt Blatt, BMK und Bezeichnung – die Liste zeigt so, was in Vorlagen und Erstellliste noch zu tun ist.
+  - `Darstellung in Liste` = nein nimmt Blöcke heraus (Anlagenbild, virtuelle Datenpunkte, Schaltschrankmeldungen …). Geräte ohne Eintrag stehen mit Geräteart „?“ in der Liste, das Protokoll nennt Block und BMK so, wie sie in die Referenz gehören. Doppelte BMK in einer Anlage meldet das Protokoll.
+  - BAS: der des ersten aktiven Datenpunkts, gekürzt nach `OC_AKS`. Hat ein Gerät keinen aktiven Datenpunkt, bildet openCirt ihn aus `BAS.csv` wie die BAS-Generierung, nur für die Liste (wie seit 2.8.1 bei der Anlagenleistungsliste).
+  - Als Auftrag von außen: `{ "aktion": "feldgeraeteliste", "projekt": "<Projektordner>" }`. `OpenCirt_status.json`: `ausgabe` = Liste, Zähler `feldgeraete`, `davon_funktion`, `ohne_eintrag`, `nicht_in_liste`, `ohne_oc_aks`, `fg_stempel`, `ausfuehrung_fehlt`, `geraetearten` (Zeilen der Summe), `zeichnungen`.
+
+### Removed
+- **Sensorliste.** Sie ist in der Feldgeräteliste aufgegangen (Filter Kategorie = Sensor). Mit ihr entfallen der Knopf „Sensorliste erstellen“, die Auftragsaktion `sensorliste` (ein Auftrag damit wird mit Hinweis auf `feldgeraeteliste` abgelehnt), `01- Referenzen/sensor.csv` und der Stichwortabgleich gegen `OC_PRODUKT`, der ohne gepflegtes `OC_PRODUKT` nichts fand.
+
+### Changed
+- Die Bildung eines BAS aus `BAS.csv` für ein Gerät ohne aktiven Datenpunkt ist eine gemeinsame Funktion für Anlagenleistungsliste und Feldgeräteliste; das Ergebnis der Anlagenleistungsliste ist unverändert.
+
+### Geprüft (Linux, BricsCAD V26, eigene Testinstanz, Kopien der Projekte)
+- Projekt mit 185 Quellzeichnungen (Lüftung, Heizung, Raumautomation): 247 Feldgeräte und 8 Reparaturschalter, 0 ohne Eintrag, 149 Blöcke per „nein“ heraus, 15 s. Die Geräte stimmen Stück für Stück mit einer unabhängigen Zählung über `dwg2dxf` überein. 2- und 3-Wege-Ventile getrennt über den Blocknamen, auch bei anonymen Kopien.
+- Projekt mit 677 Quellzeichnungen: 1511 Zeilen in 34 Gerätearten, 24 s. Mit der Referenz eines anderen Projekts blieben 224 Geräte ohne Eintrag – das Protokoll nannte genau die fehlenden 17 Block/BMK-Paare. Die Meldung doppelter BMK fand Blätter, auf denen dasselbe Kennzeichen in einer Anlage am selben Ort zweimal vergeben ist; in der Raumautomation (viele Räume in einem Anlagenordner, jeder zählt ab 01) meldet sie dank Ortskennzeichen nichts.
+- Beispielprojekt ohne Gesamtlauf (BAS aus `BAS.csv`). Knopf mit Abschlussmeldung und Auftrag liefern dieselbe Liste; `sensorliste` wird abgelehnt.
+- Gesamtlauf eines Projekts mit Feldgeräte-Stempeln (Aufbauen, Erstellen mit Leistungslisten, Feldgeräteliste, IO-Liste, PDF mit 469 Seiten): Anlagenleistungsliste unverändert (17 Leistungsstempel), Feldgeräteliste ohne fehlende Ausführung. Stempel und Linien auf den Layern `GA-Feldgeraetestempel` und `GA-Feldgeraetestempel-Verbindung` mit „nicht drucken“ erscheinen nicht im PDF, werden aber gelesen.
+- Feldgeräte-Stempel in einer Projektkopie (RLT-Blatt): ein Stempel mit zwei Linien gibt beiden Klappen „Antrieb 5 Nm“; ein Stempel am Vorlauffühler mit ausgeblendeter dritter Zeile liefert nur die zwei sichtbaren („Tauchhuelse 150 mm, Material Messing“); ein Stempel ohne Linie wird gemeldet; mit „Ausführung Pflicht“ für Klappen und Tauchfühler stehen die übrigen 12 als „(Ausführung fehlt)“ in Liste und Summe, im Protokoll mit Blatt und BMK.
+
 ## [2.8.1] - 2026-11-19
 
 ### Changed

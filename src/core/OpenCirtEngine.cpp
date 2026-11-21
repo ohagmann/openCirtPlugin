@@ -964,7 +964,8 @@ struct OcDrawing::Impl {
         AcDbObjectId recordId;
         QString name;         ///< Name des Blocks, bei anonymen Bloecken *U...
         QString upper;
-        QString effUpper;     ///< Name wie im Eigenschaftenfenster, bei Bedarf ermittelt
+        QString effName;      ///< Name wie im Eigenschaftenfenster, bei Bedarf ermittelt
+        QString effUpper;     ///< derselbe in Grossschreibung
         bool effKnown = false;
         double x = 0, y = 0;
         double sx = 1.0;
@@ -1128,20 +1129,70 @@ struct OcDrawing::Impl {
     /// Name wie im Eigenschaftenfenster ("EffectiveName"), in Grossschreibung
     const QString& effectiveUpper(Ins& ins)
     {
-        if (!ins.effKnown) {
-            ins.effKnown = true;
-            ins.effUpper = ins.upper;
-            if (ins.name.startsWith(QLatin1Char('*'))) {
-                AcValue value;
-                if (BrxDbProperties::getValue(ins.id, L"EffectiveName~Native", value)) {
-                    AcString text;
-                    if (value.get(text) && !text.isEmpty()) {
-                        ins.effUpper = OcEngine::lispUpper(QString::fromWCharArray(text.kwszPtr()));
-                    }
+        resolveEffectiveName(ins);
+        return ins.effUpper;
+    }
+
+    /// Name wie im Eigenschaftenfenster ("EffectiveName"), Schreibweise der
+    /// Definition
+    const QString& effectiveName(Ins& ins)
+    {
+        resolveEffectiveName(ins);
+        return ins.effName;
+    }
+
+    void resolveEffectiveName(Ins& ins)
+    {
+        if (ins.effKnown) return;
+        ins.effKnown = true;
+        ins.effName = ins.name;
+        if (ins.name.startsWith(QLatin1Char('*'))) {
+            AcValue value;
+            if (BrxDbProperties::getValue(ins.id, L"EffectiveName~Native", value)) {
+                AcString text;
+                if (value.get(text) && !text.isEmpty()) {
+                    ins.effName = QString::fromWCharArray(text.kwszPtr());
                 }
             }
         }
-        return ins.effUpper;
+        ins.effUpper = OcEngine::lispUpper(ins.effName);
+    }
+
+    /// Index des Plankopfs (oc-find-plankopf): erster Block, dessen Name mit
+    /// OC_RSH_PLANKOPF_QUER beginnt; -1 ohne Plankopf
+    int plankopfIndex() const
+    {
+        for (int i = 0; i < inserts.size(); ++i) {
+            if (inserts.at(i).upper.startsWith(QLatin1String("OC_RSH_PLANKOPF_QUER"))) return i;
+        }
+        return -1;
+    }
+
+    /// BAS eines Blocks aus den BAS-Bausteinen wie in genBas fuer Datenpunkt
+    /// dp: jedes Attribut erst im Block suchen, dann im Plankopf. Nur zum
+    /// Lesen, in die Zeichnung wird nichts geschrieben. Ohne Leerzeichen aussen.
+    QString basAusBausteinen(int insert, const QVector<OcBasSegment>& segments, int dp) const
+    {
+        const int plankopf = plankopfIndex();
+        auto readAttr = [this](int idx, const QString& name) {
+            QString value;
+            readFirst(inserts.at(idx), OcEngine::lispUpper(name), value);
+            return value;
+        };
+        QString bas;
+        for (const OcBasSegment& seg : segments) {
+            if (seg.type == OcBasSegment::Static) {
+                bas += seg.value;
+                continue;
+            }
+            const QString name = (seg.type == OcBasSegment::AttrDp)
+                ? seg.value + QLatin1Char('_') + QString::number(dp)
+                : seg.value;
+            QString value = readAttr(insert, name);
+            if (value.isEmpty() && plankopf >= 0) value = readAttr(plankopf, name);
+            bas += value;
+        }
+        return bas.trimmed();
     }
 
     /// Attributwert setzen. Im Editor rechnet BricsCAD die Lage zentrierter
@@ -2656,32 +2707,7 @@ OcLlScan OcDrawing::scanLeistungsstempel(double tol, const QVector<OcBasSegment>
                 // 1), nur fuer die Liste und ohne ihn in die Zeichnung zu schreiben;
                 // abgeschnitten wird ohnehin nach OC_AKS.
                 if (bas.isEmpty() && basSegments && !basSegments->isEmpty()) {
-                    int plankopf = -1;
-                    for (int i = 0; i < d->inserts.size(); ++i) {
-                        if (d->inserts.at(i).upper.startsWith(QLatin1String("OC_RSH_PLANKOPF_QUER"))) {
-                            plankopf = i;
-                            break;
-                        }
-                    }
-                    auto readAttr = [this](int insert, const QString& name) {
-                        QString value;
-                        Impl::readFirst(d->inserts.at(insert), OcEngine::lispUpper(name), value);
-                        return value;
-                    };
-                    const int devInsert = deviceIdx.at(bestK);
-                    for (const OcBasSegment& seg : *basSegments) {
-                        if (seg.type == OcBasSegment::Static) {
-                            bas += seg.value;
-                            continue;
-                        }
-                        const QString name = (seg.type == OcBasSegment::AttrDp)
-                            ? seg.value + QStringLiteral("_1")
-                            : seg.value;
-                        QString value = readAttr(devInsert, name);
-                        if (value.isEmpty() && plankopf >= 0) value = readAttr(plankopf, name);
-                        bas += value;
-                    }
-                    bas = bas.trimmed();
+                    bas = d->basAusBausteinen(deviceIdx.at(bestK), *basSegments, 1);
                 }
                 if (bas.isEmpty()) {
                     st.link = OcLlStamp::NoBasValue;
@@ -2709,6 +2735,287 @@ OcLlScan OcDrawing::scanLeistungsstempel(double tol, const QVector<OcBasSegment>
                          const int na = a.nr > 0 ? a.nr : INT_MAX;
                          const int nb = b.nr > 0 ? b.nr : INT_MAX;
                          if (na != nb) return na < nb;
+                         if (std::fabs(a.x - b.x) > 1e-6) return a.x < b.x;
+                         return a.y > b.y;
+                     });
+    return scan;
+}
+
+// ============================================================================
+// Feldgeraeteliste
+// ============================================================================
+
+namespace {
+
+/// Layer, auf dem die Linie Feldgeraete-Stempel -> Geraet liegt
+const char* const kFgLinkLayer = "GA-FELDGERAETESTEMPEL-VERBINDUNG";
+
+/// Eine Stempelzeile als Text: "Antrieb [Nm]" + "5" -> "Antrieb 5 Nm",
+/// "Material" + "Edelstahl" -> "Material Edelstahl". Ohne Wert leer: eine
+/// Bezeichnung allein (Muster der Vorlage) sagt nichts ueber das Geraet.
+QString fgZeilenText(const QString& s1Raw, const QString& s2Raw)
+{
+    const QString s1 = s1Raw.simplified();
+    const QString s2 = s2Raw.simplified();
+    if (s2.isEmpty()) return QString();
+    if (s1.isEmpty()) return s2;
+    static const QRegularExpression einheit(QStringLiteral("^(.*?)\\s*\\[([^\\]]*)\\]\\s*$"));
+    const QRegularExpressionMatch m = einheit.match(s1);
+    if (m.hasMatch()) {
+        const QString label = m.captured(1).trimmed();
+        const QString unit = m.captured(2).trimmed();
+        QString text = label.isEmpty() ? s2 : label + QLatin1Char(' ') + s2;
+        if (!unit.isEmpty() && unit != QLatin1String("-")) text += QLatin1Char(' ') + unit;
+        return text;
+    }
+    return s1 + QLatin1Char(' ') + s2;
+}
+
+} // namespace
+
+OcFgScan OcDrawing::scanFeldgeraete(const QVector<OcBasSegment>* basSegments, double tol) const
+{
+    OcFgScan scan;
+    if (!d->db) return scan;
+
+    scan.ortskennzeichen = attributeValue(QStringLiteral("ORTSKENNZEICHEN"),
+                                          QStringLiteral("OC_RSH_PLANKOPF*")).trimmed();
+
+    // Modellbereich und Layer, die die Suche braucht (wie scanLeistungsstempel)
+    AcDbObjectId modelSpace, linkLayer, suppressLayer;
+    {
+        AcDbBlockTable* pTable = nullptr;
+        if (d->db->getBlockTable(pTable, AcDb::kForRead) == Acad::eOk && pTable) {
+            pTable->getAt(ACDB_MODEL_SPACE, modelSpace);
+            pTable->close();
+        }
+        AcDbLayerTable* pLayers = nullptr;
+        if (d->db->getLayerTable(pLayers, AcDb::kForRead) == Acad::eOk && pLayers) {
+            AcDbLayerTableIterator* pIter = nullptr;
+            pLayers->newIterator(pIter);
+            if (pIter) pIter->setSkipHidden(false);   // *SUPPRESS ist verborgen
+            for (; pIter && !pIter->done(); pIter->step()) {
+                AcDbObjectId id;
+                if (pIter->getRecordId(id) != Acad::eOk) continue;
+                const QString name = layerUpper(id);
+                if (name == QLatin1String(kFgLinkLayer)) linkLayer = id;
+                else if (name == QLatin1String("*SUPPRESS")) suppressLayer = id;
+            }
+            delete pIter;
+            if (suppressLayer.isNull()) pLayers->getAt(_T("*SUPPRESS"), suppressLayer);
+            pLayers->close();
+        }
+    }
+
+    auto ownedByModelSpace = [&modelSpace](const AcDbObjectId& id) {
+        AcDbEntity* pEnt = nullptr;
+        if (acdbOpenObject(pEnt, id, AcDb::kForRead) != Acad::eOk || !pEnt) return false;
+        const bool inModel = pEnt->ownerId() == modelSpace;
+        pEnt->close();
+        return inModel;
+    };
+
+    // ---- Geraete und Feldgeraete-Stempel ----
+    static const QRegularExpression listSplit(QStringLiteral("[,;\\s]+"));
+    QVector<int> deviceIns;     // Index in d->inserts, parallel zu scan.devices
+    QVector<int> stampIdx;
+    for (int i = 0; i < d->inserts.size(); ++i) {
+        Impl::Ins& ins = d->inserts[i];
+        if (ins.attrs.isEmpty()) continue;
+        if (!ownedByModelSpace(ins.id)) continue;   // nur Modellbereich
+
+        QString liste;
+        if (Impl::readFirst(ins, QStringLiteral("OC_LISTE"), liste)
+            && OcEngine::lispUpper(liste).split(listSplit, Qt::SkipEmptyParts)
+                   .contains(QStringLiteral("FG"))) {
+            stampIdx.append(i);
+        }
+
+        // Aktive Datenpunkte in der Reihenfolge n
+        QVector<QPair<QString, QString>> dps;
+        for (int n = 1; n <= 25; ++n) {
+            const QString suffix = QString::number(n);
+            QString aktiv;
+            Impl::readFirst(ins, QStringLiteral("OC_FL_AKTIV_") + suffix, aktiv);
+            if (!OcEngine::isActiveValue(aktiv)) continue;
+            QString fcode, bas;
+            Impl::readFirst(ins, QStringLiteral("OC_FCODE_DP_") + suffix, fcode);
+            Impl::readFirst(ins, QStringLiteral("OC_BAS_DP_") + suffix, bas);
+            dps.append(qMakePair(fcode.trimmed(), bas.trimmed()));
+        }
+
+        // Das Geraet ist, was in OC_AKS steht; leer = kein Geraet
+        const QString aks = Impl::lastOrEmpty(ins, QStringLiteral("OC_AKS")).trimmed();
+        if (aks.isEmpty()) {
+            if (!dps.isEmpty()) scan.ohneAks.append(d->effectiveName(ins));
+            continue;
+        }
+
+        OcFgDevice dev;
+        dev.block = d->effectiveName(ins);
+        dev.aks = aks;
+        dev.bezeichnung = Impl::lastOrEmpty(ins, QStringLiteral("OC_BEZEICHNUNG")).trimmed();
+        dev.produkt = Impl::lastOrEmpty(ins, QStringLiteral("OC_PRODUKT")).trimmed();
+        dev.datenpunkte = dps;
+        dev.x = ins.x;
+        dev.y = ins.y;
+
+        // BAS: erster aktiver Datenpunkt mit BAS - die Werte inaktiver Plaetze
+        // koennen Reste aus anderen Projekten sein. Ohne einen: aus BAS.csv.
+        QString bas;
+        for (const auto& dp : dps) {
+            if (!dp.second.isEmpty()) { bas = dp.second; break; }
+        }
+        if (bas.isEmpty() && basSegments && !basSegments->isEmpty()) {
+            bas = d->basAusBausteinen(i, *basSegments, 1);
+        }
+        if (!bas.isEmpty()) {
+            const int pos = bas.lastIndexOf(aks, -1, Qt::CaseInsensitive);
+            dev.bas = pos >= 0 ? bas.left(pos + aks.size()) : bas;
+        }
+        scan.devices.append(dev);
+        deviceIns.append(i);
+    }
+    scan.fgStempel = stampIdx.size();
+
+    if (!stampIdx.isEmpty()) {
+        // ---- Linien auf dem Verbindungslayer im Modellbereich ----
+        struct Ends { AcGePoint3d a, b; };
+        QVector<Ends> lines;
+        if (!linkLayer.isNull() && !modelSpace.isNull()) {
+            AcDbBlockTableRecord* pSpace = nullptr;
+            if (acdbOpenObject(pSpace, modelSpace, AcDb::kForRead) == Acad::eOk && pSpace) {
+                AcDbBlockTableRecordIterator* pIter = nullptr;
+                pSpace->newIterator(pIter);
+                for (; pIter && !pIter->done(); pIter->step()) {
+                    AcDbEntity* pEnt = nullptr;
+                    if (pIter->getEntity(pEnt, AcDb::kForRead) != Acad::eOk || !pEnt) continue;
+                    if (pEnt->layerId() == linkLayer && pEnt->isKindOf(AcDbCurve::desc())) {
+                        AcDbCurve* pCurve = AcDbCurve::cast(pEnt);
+                        Ends e;
+                        if (!pCurve->isClosed()
+                            && pCurve->getStartPoint(e.a) == Acad::eOk
+                            && pCurve->getEndPoint(e.b) == Acad::eOk
+                            && dist2d(e.a, e.b) > tol) {
+                            lines.append(e);
+                        }
+                    }
+                    pEnt->close();
+                }
+                delete pIter;
+                pSpace->close();
+            }
+        }
+
+        auto distanceTo = [&](const Impl::Ins& ins, const AcGePoint3d& p) {
+            AcDbBlockReference* pRef = nullptr;
+            if (acdbOpenObject(pRef, ins.id, AcDb::kForRead) != Acad::eOk || !pRef) return kLlInfinity;
+            double dist = kLlInfinity;
+            AcDbExtents ext;
+            if (pRef->getGeomExtents(ext) != Acad::eOk || boxDistance(p, ext) <= tol) {
+                dist = visibleDistance(pRef, p, suppressLayer);
+            }
+            pRef->close();
+            return dist;
+        };
+
+        // Sichtbar = Attribut nicht auf *SUPPRESS (ausgeblendete Zeile eines
+        // parametrischen Stempels) und nicht unsichtbar
+        auto sichtbar = [&suppressLayer](const Impl::Attr& a) {
+            AcDbAttribute* pAttr = nullptr;
+            if (acdbOpenObject(pAttr, a.id, AcDb::kForRead) != Acad::eOk || !pAttr) return false;
+            const bool ok = !pAttr->isInvisible()
+                && (suppressLayer.isNull() || pAttr->layerId() != suppressLayer);
+            pAttr->close();
+            return ok;
+        };
+
+        // Stempel nach [n], dann von links nach rechts: bei zwei Stempeln am
+        // selben Geraet gilt der erste
+        static const QRegularExpression nrRe(QStringLiteral("^\\s*\\[(\\d+)\\]"));
+        auto nrOf = [this](int idx) {
+            const QRegularExpressionMatch m =
+                nrRe.match(Impl::lastOrEmpty(d->inserts.at(idx), QStringLiteral("OC_ANLAGE")));
+            return m.hasMatch() ? m.captured(1).toInt() : INT_MAX;
+        };
+        std::stable_sort(stampIdx.begin(), stampIdx.end(), [&](int a, int b) {
+            const int na = nrOf(a), nb = nrOf(b);
+            if (na != nb) return na < nb;
+            return d->inserts.at(a).x < d->inserts.at(b).x;
+        });
+
+        for (int si : stampIdx) {
+            const Impl::Ins& st = d->inserts.at(si);
+            const QString titel = Impl::lastOrEmpty(st, QStringLiteral("OC_ANLAGE")).trimmed();
+            const QString name = titel.isEmpty() ? QStringLiteral("Feldgeraete-Stempel") : titel;
+
+            // Sichtbare Zeilen mit Wert
+            QStringList teile;
+            for (int n = 1; n <= 16; ++n) {
+                QString s1, s2;
+                bool v1 = false, v2 = false;
+                for (const Impl::Attr& a : st.attrs) {
+                    if (a.upper == QStringLiteral("OC_TEXT_Z%1_S1").arg(n)) { s1 = a.text; v1 = sichtbar(a); }
+                    else if (a.upper == QStringLiteral("OC_TEXT_Z%1_S2").arg(n)) { s2 = a.text; v2 = sichtbar(a); }
+                }
+                if (!v1 && !v2) continue;
+                const QString t = fgZeilenText(v1 ? s1 : QString(), v2 ? s2 : QString());
+                if (!t.isEmpty()) teile << t;
+            }
+            const QString ausfuehrung = teile.join(QStringLiteral(", "));
+
+            int linked = 0;
+            for (const Ends& e : lines) {
+                const double da = distanceTo(st, e.a);
+                const double db = distanceTo(st, e.b);
+                if (std::min(da, db) > tol) continue;
+                // Das Geraet sitzt am anderen Ende; liegen beide Enden am
+                // Stempel, wird an beiden gesucht, das weiter entfernte zuerst
+                const bool beide = da <= tol && db <= tol;
+                const AcGePoint3d farEnd = (da <= db) ? e.b : e.a;
+                const AcGePoint3d nearEnd = (da <= db) ? e.a : e.b;
+                int bestK = -1;
+                double bestDist = kLlInfinity;
+                for (int pass = 0; pass < (beide ? 2 : 1) && bestK < 0; ++pass) {
+                    const AcGePoint3d probe = pass == 0 ? farEnd : nearEnd;
+                    for (int k = 0; k < deviceIns.size(); ++k) {
+                        const double dist = distanceTo(d->inserts.at(deviceIns.at(k)), probe);
+                        if (dist <= tol && dist < bestDist) {
+                            bestDist = dist;
+                            bestK = k;
+                        }
+                    }
+                }
+                if (bestK < 0) {
+                    scan.stempelHinweise << QStringLiteral("%1: eine Linie endet an keinem Geraet mit OC_AKS")
+                                            .arg(name);
+                    continue;
+                }
+                OcFgDevice& dev = scan.devices[bestK];
+                ++linked;
+                if (!dev.ausfuehrungStempel.isEmpty()) {
+                    if (dev.ausfuehrungStempel != name) {
+                        scan.stempelHinweise << QStringLiteral("%1 (%2) haengt an zwei Stempeln: %3 gilt, %4 nicht")
+                                                .arg(dev.aks, dev.bezeichnung, dev.ausfuehrungStempel, name);
+                    }
+                    continue;
+                }
+                dev.ausfuehrung = ausfuehrung;
+                dev.ausfuehrungStempel = name;
+            }
+            if (linked == 0) {
+                scan.stempelHinweise << (linkLayer.isNull()
+                    ? QStringLiteral("%1: keine Linie - Layer GA-Feldgeraetestempel-Verbindung fehlt im Blatt").arg(name)
+                    : QStringLiteral("%1: keine Linie zu einem Geraet").arg(name));
+            } else if (ausfuehrung.isEmpty()) {
+                scan.stempelHinweise << QStringLiteral("%1: keine sichtbare Zeile mit Wert").arg(name);
+            }
+        }
+    }
+
+    // Lage auf dem Blatt: von links nach rechts, bei gleichem x von oben nach unten
+    std::stable_sort(scan.devices.begin(), scan.devices.end(),
+                     [](const OcFgDevice& a, const OcFgDevice& b) {
                          if (std::fabs(a.x - b.x) > 1e-6) return a.x < b.x;
                          return a.y > b.y;
                      });

@@ -25,11 +25,11 @@
 #include "Theming.h"
 #include "BasConfigDialog.h"
 #include "SeitennamenConfigDialog.h"
-#include "../utils/SensorKeywordLoader.h"
 #include "../utils/CsvListWriter.h"
 #include "../core/ProjectBuilder.h"
 #include "../core/OpenCirtEngine.h"
 #include "../core/Leistungsliste.h"
+#include "../core/Feldgeraeteliste.h"
 
 // Qt Headers
 #include <QVBoxLayout>
@@ -530,9 +530,15 @@ void OpenCirtTab::setupUi() {
         "  HW    = nur Hardware (mit Modul-/Kanalzuordnung)\n"
         "  BUS;SMI = mehrere Arten, semikolongetrennt");
 
-    m_btnSensorliste = createButtonRow(
-        "Sensorliste erstellen",
-        "Fuehler/Sensoren aus GA-FL-Daten als CSV-Datei exportieren");
+    m_btnFeldgeraete = createButtonRow(
+        QString::fromUtf8("Feldger\xC3\xA4teliste erstellen"),
+        QString::fromUtf8("Alle Feldger\xC3\xA4te (Bl\xC3\xB6""cke mit OC_AKS) als CSV-Liste und Summe je Ger\xC3\xA4teart"));
+    m_btnFeldgeraete->setToolTip(QString::fromUtf8(
+        "Liest alle Quellzeichnungen (nur lesend) und schreibt nach '06- Plot':\n"
+        "  Feldgeraeteliste.csv        - ein Feldger\xC3\xA4t je Zeile, nach Los, ASP, Gewerk, Anlage\n"
+        "  Feldgeraeteliste_Summe.csv  - Anzahl je Ger\xC3\xA4teart und Lieferung, je ASP, Los und gesamt\n"
+        "Feldger\xC3\xA4t = jeder Block mit gef\xC3\xBClltem OC_AKS, mit oder ohne Datenpunkt.\n"
+        "Was f\xC3\xBCr ein Ger\xC3\xA4t es ist, steht in '01- Referenzen/Feldgeraete.csv'."));
 
     m_btnTestdaten = createButtonRow(
         "Export Testdaten",
@@ -574,7 +580,7 @@ void OpenCirtTab::setupUi() {
     connect(m_projectEdit, &QLineEdit::textChanged, this, &OpenCirtTab::onProjectEdited);
     connect(m_btnFullProject, &QPushButton::clicked, this, &OpenCirtTab::onFullProjectGenerate);
     connect(m_btnPublish, &QPushButton::clicked, this, &OpenCirtTab::onPublishPdf);
-    connect(m_btnSensorliste, &QPushButton::clicked, this, &OpenCirtTab::onSensorListeGenerate);
+    connect(m_btnFeldgeraete, &QPushButton::clicked, this, &OpenCirtTab::onFeldgeraetelisteGenerate);
     connect(m_btnDpExport, &QPushButton::clicked, this, &OpenCirtTab::onDatenpunktExport);
     connect(m_btnTestdaten, &QPushButton::clicked, this, &OpenCirtTab::onTestdatenExport);
     connect(m_btnBasConfig, &QPushButton::clicked, this, &OpenCirtTab::onBasKonfigurieren);
@@ -1066,8 +1072,8 @@ void OpenCirtTab::runAuftrag() {
         onPublishPdf();
     } else if (m_auftrag->aktion == "io_liste") {
         onDatenpunktExport();
-    } else if (m_auftrag->aktion == "sensorliste") {
-        onSensorListeGenerate();
+    } else if (m_auftrag->aktion == "feldgeraeteliste") {
+        onFeldgeraetelisteGenerate();
     } else if (m_auftrag->aktion == "testdaten") {
         onTestdatenExport();
     } else if (m_auftrag->aktion == "aufbauen") {
@@ -1204,7 +1210,7 @@ void OpenCirtTab::updateButtonStates() {
     const bool enabled = !m_projectRoot.isEmpty() && !busy;
     m_btnProjektAufbau->setEnabled(enabled);
     m_btnPublish->setEnabled(enabled);
-    m_btnSensorliste->setEnabled(enabled);
+    m_btnFeldgeraete->setEnabled(enabled);
     m_btnDpExport->setEnabled(enabled);
     m_btnTestdaten->setEnabled(enabled);
     m_btnFullProject->setEnabled(enabled);
@@ -2209,200 +2215,298 @@ bool OpenCirtTab::runGesamtlauf(const QStringList& dwgFiles, RunCounts& counts) 
 }
 
 // ============================================================================
-// Sensorliste Generation (One-Shot, eigenstaendiger Button)
+// Feldgeraeteliste (eigenstaendiger Button, liest nur)
 // ============================================================================
 
-void OpenCirtTab::onSensorListeGenerate() {
+void OpenCirtTab::onFeldgeraetelisteGenerate() {
     HandlerScope scope(this);
     if (!requireProjectStructure()) return;
 
-    log("=== SENSORLISTE ERSTELLEN ===");
+    const QString titel = QString::fromUtf8("Feldger\xC3\xA4teliste");
+    log("=== FELDGERAETELISTE ERSTELLEN ===");
 
-    // --- 1. sensor.csv laden ---
-    QString sensorCsvPath = projectPath(OpenCirtConfig::REFERENZEN_DIR) + "/sensor.csv";
-    if (!QFileInfo::exists(sensorCsvPath)) {
-        reportError("Sensorliste",
-            "sensor.csv nicht gefunden: " + QDir::toNativeSeparators(sensorCsvPath),
-            "Bitte sensor.csv im Ordner '01- Referenzen' anlegen.\n"
-            "Zeile 1 = Header, ab Zeile 2 = Keywords (Spalte 1).", false);
+    // --- 1. Referenz Feldgeraete.csv ---
+    const QString refPath = referencePath("Feldgeraete.csv");
+    if (!QFileInfo::exists(refPath)) {
+        reportError(titel,
+            "Feldgeraete.csv nicht gefunden: " + QDir::toNativeSeparators(refPath),
+            QString::fromUtf8(
+                "Bitte im Ordner '01- Referenzen' anlegen (Semikolon, Zeile 1 = Kopf):\n\n"
+                "Block:;BMK:;Funktion:;Ger\xC3\xA4teart:;Kategorie:;Lieferung:;Darstellung in Liste:\n"
+                ";TVL;;Tauchtemperaturf\xC3\xBChler;Sensor;GA;ja\n"
+                "OC_VORLAGE_3W_VENTIL_HZG;;;3-Wege-Regelventil mit Antrieb;Ventil;GA;ja\n\n"
+                "Block ohne Versionsnummer, BMK ohne Nummer. Aufbau in der Bedienungsanleitung."),
+            false);
         return;
     }
-
-    SensorKeywordLoader keywords;
-    if (!keywords.load(sensorCsvPath)) {
-        logError("Keine Keywords in sensor.csv gefunden!");
+    OcFg::Referenz referenz;
+    QString refError;
+    QStringList refHinweise;
+    if (!referenz.load(refPath, &refError, &refHinweise)) {
+        reportError(titel, "Feldgeraete.csv nicht verwendbar: " + refError, QString(), false);
         return;
     }
-    log(QString("%1 Sensor-Keywords geladen").arg(keywords.keywordCount()));
+    log(QString("Feldgeraete.csv: %1 Eintraege").arg(referenz.size()));
+    for (const QString& h : refHinweise) log("Feldgeraete.csv " + h, "WARN");
 
-    // --- 2. Datenpunkte aus den Zeichnungen lesen ---
-    // Die Liste liest die Zeichnungen des geladenen Projekts selbst. Frueher
-    // griff sie auf die Extraktion des letzten Gesamtlaufs im Tempordner
-    // zurueck - die konnte zu einem anderen Projekt oder zu einem aelteren
-    // Stand der Zeichnungen gehoeren.
-    QStringList dwgFiles = findProjectDwgs();
+    // BAS fuer Geraete ohne aktiven Datenpunkt (nur fuer die Liste)
+    bool basFound = false;
+    const QVector<OcBasSegment> basSegments =
+        OcEngine::parseBasCsv(referencePath(OpenCirtConfig::BAS_CSV), &basFound);
+    if (!basFound || basSegments.isEmpty()) {
+        log("BAS.csv fehlt oder ist leer - Geraete ohne aktiven Datenpunkt stehen ohne BAS in der Liste",
+            "WARN");
+    }
+
+    // --- 2. Zeichnungen lesen (ohne sie zu aendern) ---
+    const QStringList dwgFiles = findProjectDwgs();
     if (dwgFiles.isEmpty()) {
         logError("Keine DWG-Dateien im Projekt gefunden!");
         return;
     }
+    const QDir drawingsRoot(projectPath(OpenCirtConfig::ZEICHNUNGEN_DIR));
 
     QStringList unreadable;
-    QVector<SourceDrawingInfo> drawings;
-    beginRun(m_btnSensorliste, "Sensorliste wird erstellt...", "sensorliste");
-    bool extracted = false;
+    QVector<QPair<QString, OcFgScan>> scans;   // Zeichnung (findProjectDwgs-Reihenfolge) -> Inhalt
+    beginRun(m_btnFeldgeraete, QString::fromUtf8("Feldger\xC3\xA4teliste wird erstellt..."),
+             "feldgeraeteliste");
     try {
-        extracted = extractDrawings(dwgFiles, QStringLiteral("Sensorliste"), unreadable);
-        if (extracted && unreadable.isEmpty()) {
-            drawings = readExtractedData(dwgFiles);
+        beginPhase("Zeichnungen lesen", dwgFiles.size());
+        for (const QString& path : dwgFiles) {
+            OcDrawing dwg;
+            if (!dwg.open(path, true)) {
+                logError(QString("%1: %2").arg(QFileInfo(path).fileName(), dwg.lastError()));
+                unreadable << QDir::toNativeSeparators(drawingsRoot.relativeFilePath(path));
+            } else {
+                scans.append(qMakePair(path, dwg.scanFeldgeraete(
+                    basSegments.isEmpty() ? nullptr : &basSegments)));
+            }
+            stepDone(QFileInfo(path).fileName());
         }
     } catch (const RunCancelled&) {
         endRun();
-        reportCancelled("Sensorliste", "- die Zeichnungen wurden nur gelesen, nichts geaendert; "
-                                       "es wurde keine Sensorliste geschrieben.");
+        reportCancelled(titel, QString::fromUtf8("- die Zeichnungen wurden nur gelesen, nichts ge\xC3\xA4ndert; "
+                                                 "es wurde keine Liste geschrieben."));
         return;
     }
     endRun();
 
-    if (!extracted) return;
     if (!unreadable.isEmpty()) {
-        // Auftrag: die Zeichnungen ins Protokoll; die Ergebniszeile danach
-        // bestimmt den Laufstatus
         if (!interaktiv()) {
             for (const QString& f : unreadable) log("  nicht lesbar: " + f, "ERROR");
         }
-        logError(QString("Sensorliste nicht erstellt: %1 Zeichnung(en) nicht lesbar")
+        logError(QString("Feldgeraeteliste nicht erstellt: %1 Zeichnung(en) nicht lesbar")
                  .arg(unreadable.size()));
         if (interaktiv()) {
-            showListWarning(this, "Sensorliste",
+            showListWarning(this, titel,
                 "Diese Zeichnungen liessen sich nicht lesen:",
                 unreadable,
-                "Die Sensorliste waere unvollstaendig und wurde nicht erstellt.");
+                QString::fromUtf8("Die Liste w\xC3\xA4re unvollst\xC3\xA4ndig und wurde nicht erstellt."));
         }
         return;
     }
-    if (drawings.isEmpty()) {
-        reportError("Sensorliste",
-            QString("Keine aktiven Datenpunkte in den %1 Zeichnungen des Projekts gefunden")
-                .arg(dwgFiles.size()), QString(), false);
-        return;
-    }
 
-    // --- 3. Datenpunkte filtern ---
-    struct SensorEntry {
-        QString asp;
-        QString anlage;
-        QString bezeichnung;
-        QString bmk;
-        QString bas;
-        QString fuehlertyp;
-    };
+    // --- 3. Zeilen bilden ---
+    QVector<OcFg::Zeile> zeilen;
+    int nichtInListe = 0;
+    int funktionsZeilen = 0;
+    QMap<QString, int> unbekannt;          // "Block | BMK" -> Anzahl
+    QStringList ohneAks;                   // "Blatt: Block"
+    QStringList stempelHinweise;           // "Blatt: Hinweis"
+    QStringList ausfuehrungFehlt;          // "Blatt: BMK Bezeichnung (Geraeteart)"
+    int fgStempel = 0;
+    // los|asp|gewerk|anlage|ort|BMK -> Blaetter. Mit Ort: in der Raumautomation
+    // liegen viele Raeume in einem Anlagenordner, jeder zaehlt ab 01.
+    QMap<QString, QStringList> bmkJeAnlage;
+    for (const auto& entry : scans) {
+        const QString& path = entry.first;
+        const OcFgScan& scan = entry.second;
+        const QStringList levels = hierarchieLevels(QFileInfo(path).absolutePath());
+        auto ebene = [&levels](int i) {
+            return levels.size() > i ? folderDisplayName(levels.at(i)) : QString();
+        };
+        const QString rel = QDir::toNativeSeparators(drawingsRoot.relativeFilePath(path));
+        for (const QString& b : scan.ohneAks) ohneAks << rel + ": " + b;
+        for (const QString& h : scan.stempelHinweise) stempelHinweise << rel + ": " + h;
+        fgStempel += scan.fgStempel;
 
-    QList<SensorEntry> sensors;
-    QSet<QString> seenBmk;  // Deduplizierung: pro ASP+BMK nur einmal
-    int totalDp = 0;
+        for (const OcFgDevice& dev : scan.devices) {
+            const QString blockSt = OcFg::blockStamm(dev.block);
+            const QString bmkSt = OcFg::bmkStamm(dev.aks);
 
-    for (const SourceDrawingInfo& d : drawings) {
-        QString asp = d.plankopfAttributes.value("ASP", d.aspName);
-        QString anlage = d.anlage;
+            OcFg::Zeile basis;
+            basis.los = ebene(EbeneLos);
+            basis.asp = ebene(EbeneAsp);
+            basis.gewerk = ebene(EbeneGewerk);
+            basis.anlage = ebene(EbeneAnlage);
+            basis.ort = scan.ortskennzeichen;
+            basis.bmk = dev.aks;
+            basis.bas = dev.bas;
+            basis.bezeichnung = dev.bezeichnung;
+            basis.ausfuehrung = dev.ausfuehrung;
+            basis.produkt = dev.produkt;
+            basis.blatt = QFileInfo(path).completeBaseName();
+            basis.block = dev.block;
 
-        for (const DataPoint& dp : d.dataPoints) {
-            totalDp++;
-            if (keywords.isSensor(dp.produkt)) {
-                // Deduplizierung: Ein Fuehler hat oft MW_xx und TL_xx,
-                // ist aber das gleiche physische Geraet -> nur einmal listen
-                // Key muss Anlage enthalten: TVL-01 in WPL-1010 != TVL-01 in HZK-1010
-                QString dedupKey = asp + "|" + anlage + "|" + dp.aks;
-                if (seenBmk.contains(dedupKey)) continue;
-                seenBmk.insert(dedupKey);
-
-                SensorEntry e;
-                e.asp = asp;
-                e.anlage = anlage;
-                e.bezeichnung = dp.bezeichnung;
-                e.bmk = dp.aks;
-
-                // BAS: Funktionscode am Ende entfernen
-                // BAS_DP z.B. "GEB1-ASP01-HZG-WPL-1010-U01.00.001-TVL-01-MW_01"
-                // BMK z.B. "TVL-01" -> BAS bis einschl. BMK: "GEB1-...-TVL-01"
-                e.bas = dp.basString;
-                int bmkPos = e.bas.lastIndexOf(dp.aks);
-                if (bmkPos >= 0) {
-                    e.bas = e.bas.left(bmkPos + dp.aks.length());
+            // Das Geraet selbst
+            const OcFg::Eintrag* e = referenz.geraet(blockSt, bmkSt);
+            if (!e) {
+                OcFg::Zeile z = basis;
+                z.geraeteart = QStringLiteral("?");
+                z.unbekannt = true;
+                zeilen.append(z);
+                unbekannt[blockSt + " | " + bmkSt] += 1;   // so, wie es in die Referenz gehoert
+            } else if (!e->inListe) {
+                ++nichtInListe;
+            } else {
+                OcFg::Zeile z = basis;
+                z.geraeteart = e->geraeteart;
+                z.kategorie = e->kategorie;
+                z.lieferung = e->lieferung;
+                if (e->ausfuehrungPflicht && z.ausfuehrung.trimmed().isEmpty()) {
+                    z.ausfuehrung = OcFg::ausfuehrungFehlt();
+                    ausfuehrungFehlt << QString("%1: %2 %3 (%4)")
+                        .arg(rel, dev.aks, dev.bezeichnung, e->geraeteart);
                 }
+                zeilen.append(z);
+                bmkJeAnlage[basis.los + '|' + basis.asp + '|' + basis.gewerk + '|' + basis.anlage
+                            + '|' + basis.ort + '|' + dev.aks.toUpper()] << basis.blatt;
+            }
 
-                e.fuehlertyp = dp.produkt;
-                sensors.append(e);
+            // Datenpunkte mit eigener Funktion (z. B. Reparaturschalter)
+            for (const auto& dp : dev.datenpunkte) {
+                const OcFg::Eintrag* f = referenz.funktion(blockSt, bmkSt, OcFg::funktionStamm(dp.first));
+                if (!f || !f->inListe) continue;
+                OcFg::Zeile z = basis;
+                z.ausfuehrung.clear();   // die Ausfuehrung gehoert zum Geraet, nicht zum Schalter
+                z.bas = dp.second.isEmpty() ? dev.bas : dp.second;
+                z.geraeteart = f->geraeteart;
+                z.kategorie = f->kategorie;
+                z.lieferung = f->lieferung;
+                zeilen.append(z);
+                ++funktionsZeilen;
             }
         }
     }
 
-    log(QString("%1 von %2 Datenpunkten als Sensor erkannt")
-        .arg(sensors.size()).arg(totalDp));
-
-    if (sensors.isEmpty()) {
-        logError(QString("Keine Sensoren gefunden! Keywords in sensor.csv pruefen "
-                         "(geprueft: %1 Datenpunkte mit %2 Keywords).")
-                 .arg(totalDp).arg(keywords.keywordCount()));
-        if (interaktiv()) {
-            QMessageBox::information(this, "Sensorliste",
-                QString("Keine Datenpunkte matched die Keywords aus sensor.csv.\n\n"
-                        "Geprueft: %1 Datenpunkte mit %2 Keywords.")
-                .arg(totalDp).arg(keywords.keywordCount()));
-        }
+    if (zeilen.isEmpty()) {
+        reportError(titel,
+            QString("Keine Feldgeraete gefunden (%1 Zeichnungen, %2 Bloecke nicht in der Liste)")
+                .arg(dwgFiles.size()).arg(nichtInListe),
+            QString::fromUtf8("Feldger\xC3\xA4t ist jeder Block mit gef\xC3\xBClltem OC_AKS; "
+                              "'Darstellung in Liste' = nein nimmt ihn heraus."),
+            false);
         return;
     }
 
-    // --- 4. CSV schreiben ---
-    // Ausgabe in Plot-Ordner (zentraler Ausgabeort)
-    QString plotDir = m_projectRoot + "/06- Plot";
+    // --- 4. Hinweise ---
+    if (!ohneAks.isEmpty()) {
+        log(QString("%1 Block/Bloecke mit aktivem Datenpunkt, aber leerem OC_AKS - nicht in der Liste "
+                    "(in der Vorlage OC_AKS eintragen):").arg(ohneAks.size()), "WARN");
+        for (int i = 0; i < ohneAks.size() && i < 30; ++i) log("  " + ohneAks.at(i), "WARN");
+        if (ohneAks.size() > 30) log(QString("  ... und %1 weitere").arg(ohneAks.size() - 30), "WARN");
+    }
+    if (!stempelHinweise.isEmpty()) {
+        log(QString::fromUtf8("%1 Hinweis(e) zu Feldger\xC3\xA4te-Stempeln (OC_LISTE FG, Linie auf "
+                              "GA-Feldgeraetestempel-Verbindung):").arg(stempelHinweise.size()), "WARN");
+        for (int i = 0; i < stempelHinweise.size() && i < 30; ++i) log("  " + stempelHinweise.at(i), "WARN");
+        if (stempelHinweise.size() > 30) {
+            log(QString("  ... und %1 weitere").arg(stempelHinweise.size() - 30), "WARN");
+        }
+    }
+    if (!ausfuehrungFehlt.isEmpty()) {
+        log(QString::fromUtf8("%1 Ger\xC3\xA4t(e) ohne Ausf\xC3\xBChrung, obwohl sie in Feldgeraete.csv "
+                              "Pflicht ist (Feldger\xC3\xA4te-Stempel fehlt oder ist leer):")
+            .arg(ausfuehrungFehlt.size()), "WARN");
+        for (int i = 0; i < ausfuehrungFehlt.size() && i < 40; ++i) log("  " + ausfuehrungFehlt.at(i), "WARN");
+        if (ausfuehrungFehlt.size() > 40) {
+            log(QString("  ... und %1 weitere").arg(ausfuehrungFehlt.size() - 40), "WARN");
+        }
+    }
+    int doppelt = 0;
+    for (auto it = bmkJeAnlage.constBegin(); it != bmkJeAnlage.constEnd(); ++it) {
+        if (it.value().size() < 2) continue;
+        if (doppelt < 30) {
+            const QStringList teile = it.key().split('|');
+            log(QString("BMK %1 kommt in Anlage %2 (%3, Ort %4) %5-mal vor: %6")
+                .arg(teile.value(5), teile.value(3), teile.value(1), teile.value(4))
+                .arg(it.value().size()).arg(it.value().join(", ")), "WARN");
+        }
+        ++doppelt;
+    }
+    if (doppelt > 30) log(QString("... und %1 weitere doppelte BMK").arg(doppelt - 30), "WARN");
+    int unbekanntAnzahl = 0;
+    for (int n : unbekannt) unbekanntAnzahl += n;
+    if (unbekanntAnzahl > 0) {
+        log(QString::fromUtf8("%1 Ger\xC3\xA4t(e) ohne Eintrag in Feldgeraete.csv - stehen mit Ger\xC3\xA4teart \"?\" "
+                              "in der Liste (Block | BMK, Anzahl):").arg(unbekanntAnzahl), "WARN");
+        for (auto it = unbekannt.constBegin(); it != unbekannt.constEnd(); ++it) {
+            log(QString("  %1 (%2)").arg(it.key()).arg(it.value()), "WARN");
+        }
+    }
+
+    // --- 5. CSV schreiben ---
+    const QString plotDir = m_projectRoot + "/06- Plot";
     QDir().mkpath(plotDir);
-    QString outputPath = plotDir + "/Sensorliste.csv";
+    const QString listPath = plotDir + "/Feldgeraeteliste.csv";
+    const QString summePath = plotDir + "/Feldgeraeteliste_Summe.csv";
 
     CsvListWriter writer;
-    if (!writer.open(outputPath, {
-            QStringLiteral("Pos.:"),
-            QStringLiteral("ASP"),
-            QStringLiteral("Anlage:"),
-            QStringLiteral("Klartextbezeichnung:"),
-            QStringLiteral("BMK:"),
-            QStringLiteral("BAS:"),
-            QString::fromUtf8("F\xC3\xBC" "hlertyp:")})) {
+    if (!writer.open(listPath, OcFg::kopf())) {
         logError("CSV-Fehler: " + writer.lastError());
         return;
     }
-
-    // Datenzeilen (7 Spalten: Pos, ASP, Anlage, Bezeichnung, BMK, BAS, Typ)
-    int pos = 1;
-    for (const SensorEntry& s : sensors) {
-        writer.addRow({
-            QString("%1").arg(pos, 3, 10, QChar('0')),
-            s.asp,
-            s.anlage,
-            s.bezeichnung,
-            s.bmk,
-            s.bas,
-            s.fuehlertyp
-        });
-        pos++;
+    const int stellen = std::max(3, static_cast<int>(QString::number(zeilen.size()).size()));
+    for (int i = 0; i < zeilen.size(); ++i) {
+        writer.addRow(OcFg::zellen(zeilen.at(i), i + 1, stellen));
     }
-
     if (!writer.save()) {
         logError("CSV-Speichern fehlgeschlagen: " + writer.lastError());
         return;
     }
 
-    m_status.setZaehler("sensoren", sensors.size());
-    m_status.setZaehler("datenpunkte", totalDp);
-    m_status.setAusgabe(outputPath);
-    logSuccess(QString("Sensorliste erstellt: %1 Eintraege -> %2")
-               .arg(sensors.size()).arg(QDir::toNativeSeparators(outputPath)));
+    const QVector<QStringList> tabelle = OcFg::summe(zeilen);
+    CsvListWriter summeWriter;
+    if (!summeWriter.open(summePath, tabelle.value(0))) {
+        logError("CSV-Fehler: " + summeWriter.lastError());
+        return;
+    }
+    for (int i = 1; i < tabelle.size(); ++i) summeWriter.addRow(tabelle.at(i));
+    if (!summeWriter.save()) {
+        logError("CSV-Speichern fehlgeschlagen: " + summeWriter.lastError());
+        return;
+    }
+
+    m_status.setZaehler("feldgeraete", zeilen.size());
+    m_status.setZaehler("davon_funktion", funktionsZeilen);
+    m_status.setZaehler("ohne_eintrag", unbekanntAnzahl);
+    m_status.setZaehler("nicht_in_liste", nichtInListe);
+    m_status.setZaehler("ohne_oc_aks", ohneAks.size());
+    m_status.setZaehler("fg_stempel", fgStempel);
+    m_status.setZaehler("ausfuehrung_fehlt", ausfuehrungFehlt.size());
+    m_status.setZaehler("geraetearten", tabelle.size() - 1);
+    m_status.setZaehler("zeichnungen", dwgFiles.size());
+    m_status.setAusgabe(listPath);
+    logSuccess(QString("Feldgeraeteliste erstellt: %1 Feldgeraete (davon %2 ohne Eintrag in Feldgeraete.csv, "
+                       "%3 ohne Pflicht-Ausfuehrung), %4 Summenzeilen -> %5, Summe -> %6")
+               .arg(zeilen.size()).arg(unbekanntAnzahl).arg(ausfuehrungFehlt.size()).arg(tabelle.size() - 1)
+               .arg(QDir::toNativeSeparators(listPath), QDir::toNativeSeparators(summePath)));
 
     if (!interaktiv()) return;
-    QMessageBox::information(this, "Sensorliste",
-        QString("Sensorliste erfolgreich erstellt!\n\n"
-                "%1 Sensoren aus %2 Datenpunkten\n\n"
-                "Ausgabe: %3")
-        .arg(sensors.size()).arg(totalDp).arg(outputPath));
+    QMessageBox::information(this, titel,
+        QString::fromUtf8("Feldger\xC3\xA4teliste erstellt.\n\n"
+                          "%1 Feldger\xC3\xA4te, %2 Zeilen in der Summe%3\n\n"
+                          "Liste: %4\nSumme: %5")
+        .arg(zeilen.size()).arg(tabelle.size() - 1)
+        .arg((unbekanntAnzahl > 0
+              ? QString::fromUtf8("\n%1 ohne Eintrag in Feldgeraete.csv (Ger\xC3\xA4teart \"?\", siehe Protokoll)")
+                    .arg(unbekanntAnzahl)
+              : QString())
+             + (!ausfuehrungFehlt.isEmpty()
+              ? QString::fromUtf8("\n%1 ohne Ausf\xC3\xBChrung, obwohl Pflicht (siehe Protokoll)")
+                    .arg(ausfuehrungFehlt.size())
+              : QString()))
+        .arg(QDir::toNativeSeparators(listPath), QDir::toNativeSeparators(summePath)));
 }
 
 // ============================================================================

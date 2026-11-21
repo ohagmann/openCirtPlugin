@@ -87,7 +87,7 @@ bool OcAuftrag::fromFile(const QString& path, OcAuftrag& out, QString& error) {
         erlaubt += { "ziel", "ersetzen" };
     } else if (out.aktion == "io_liste") {
         erlaubt.insert("filter");
-    } else if (out.aktion == "sensorliste") {
+    } else if (out.aktion == "feldgeraeteliste") {
         // nur Projekt
     } else if (out.aktion == "testdaten") {
         erlaubt.insert("geoeffnete_blaetter");
@@ -95,7 +95,13 @@ bool OcAuftrag::fromFile(const QString& path, OcAuftrag& out, QString& error) {
         erlaubt += { "erstellliste", "vorschau" };
     } else {
         const QString aktionen =
-            "\"erstellen\", \"pdf\", \"io_liste\", \"sensorliste\", \"testdaten\" oder \"aufbauen\"";
+            "\"erstellen\", \"pdf\", \"io_liste\", \"feldgeraeteliste\", \"testdaten\" oder \"aufbauen\"";
+        if (out.aktion == "sensorliste") {
+            error = QString("Die aktion \"sensorliste\" gibt es seit 2.9.0 nicht mehr - "
+                            "\"feldgeraeteliste\" nehmen (Sensoren = Kategorie Sensor). Moeglich: %1")
+                    .arg(aktionen);
+            return false;
+        }
         error = out.aktion.isEmpty()
             ? QString("\"aktion\" fehlt (%1)").arg(aktionen)
             : QString("Unbekannte aktion \"%1\" (%2)").arg(out.aktion, aktionen);
@@ -144,7 +150,7 @@ bool OcAuftrag::fromFile(const QString& path, OcAuftrag& out, QString& error) {
             return false;
         }
         out.filter = o.value("filter").toString().trimmed();
-    } else if (out.aktion == "sensorliste") {
+    } else if (out.aktion == "feldgeraeteliste") {
         // keine Optionen
     } else if (out.aktion == "testdaten") {
         if (!readAntwort(o, "geoeffnete_blaetter", out.geoeffneteBlaetterWeiter, error)) return false;
@@ -212,8 +218,8 @@ QString OcAuftrag::beschreibung() const {
         return QString("IO-Liste erstellen (Filter %1)")
                .arg(filter.isEmpty() ? QString("leer = alle Datenpunkte") : filter);
     }
-    if (aktion == "sensorliste") {
-        return QString("Sensorliste erstellen");
+    if (aktion == "feldgeraeteliste") {
+        return QString("Feldgeraeteliste erstellen");
     }
     if (aktion == "testdaten") {
         return QString("Export Testdaten%1")

@@ -5,7 +5,7 @@
  * Die Bedienflaeche von openCirt: oben der Projektordner, darunter die
  * Schaltflaechen fuer Projekt aufbauen, Projekt erstellen (Plankopf,
  * Deckblaetter, BMK, BAS, Extraktion, GA-FL, Summen, Textbreiten), Projekt
- * bereinigen, PDF publizieren, IO-Liste, Sensorliste, dazu der
+ * bereinigen, PDF publizieren, IO-Liste, Feldgeraeteliste, dazu der
  * Fortschrittsbalken. Das Protokoll fuehrt OpenCirtWindow, der Tab schreibt
  * ueber das Signal logMessage hinein.
  *
@@ -69,7 +69,7 @@ struct DataPoint {
     QString refDp;                  ///< OC_REF_DP_n (reference name for ODS lookup)
     QString integDp;                ///< OC_INTEG_DP_n (integration type)
     QString fcodeDp;                ///< OC_FCODE_DP_n
-    QString produkt;                ///< OC_PRODUKT (Block-Ebene, fuer Sensorliste)
+    QString produkt;                ///< OC_PRODUKT (Block-Ebene)
     int dpIndex = 0;                ///< Datenpunkt-Index (1..25)
     QMap<QString, QString> funktionsWerte; ///< OC_x_x_x_DP_n values (60 columns)
 };
@@ -183,7 +183,9 @@ private slots:
     void onBrowseProject();
     void onProjectEdited(const QString& text);
     void onPublishPdf();
-    void onSensorListeGenerate();
+    /// "Feldgeraeteliste erstellen": alle Bloecke mit OC_AKS als CSV-Liste
+    /// und Summe je Geraeteart (Referenz 01- Referenzen/Feldgeraete.csv)
+    void onFeldgeraetelisteGenerate();
     void onDatenpunktExport();
 
     /// "Export Testdaten": fertige GA-FL-Blaetter als JSON fuer die
@@ -297,7 +299,7 @@ private:
 
     /// Lauf beginnen: Schaltflaechen sperren, Fortschritt und Abbrechen-Knopf
     /// zeigen, Eingaben ausserhalb sperren, Laufstatus beginnen (aktion:
-    /// "erstellen", "aufbauen", "sensorliste", "pdf")
+    /// "erstellen", "aufbauen", "feldgeraeteliste", "pdf")
     void beginRun(QPushButton* button, const QString& busyText, const QString& aktion);
     /// Neuer Abschnitt des Laufs mit eigener Zaehlung
     void beginPhase(const QString& label, int total);
@@ -575,7 +577,7 @@ private:
     QPushButton* m_btnProjektAufbau;
     QPushButton* m_btnFullProject;
     QPushButton* m_btnPublish;
-    QPushButton* m_btnSensorliste;
+    QPushButton* m_btnFeldgeraete;
     QPushButton* m_btnDpExport;
     QPushButton* m_btnTestdaten = nullptr;   ///< "Export Testdaten"
     QPushButton* m_btnBereinigen;
@@ -605,7 +607,7 @@ private:
     /// Zweck und wird nur in dem Lauf gelesen, der ihn gefuellt hat (siehe
     /// resetExtractDir()).
     QString m_extractTempDir;
-    QString m_extractPurpose;      ///< leer = Gesamtlauf, sonst z.B. "Sensorliste"
+    QString m_extractPurpose;      ///< leer = Gesamtlauf, sonst z.B. "IO-Liste"
     bool m_extractFresh = false;   ///< vom laufenden Lauf geleert und gefuellt
     QString m_odsProblem;          ///< warum convertOdsToCSV gescheitert ist (fuer die Meldung)
 

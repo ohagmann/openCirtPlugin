@@ -20,14 +20,15 @@
  *     { "aktion": "pdf", "projekt": "<Projektordner>",
  *       "ziel": "<Ordner>/<Name>.pdf", "ersetzen": false }
  *
- * Listen (seit 2.6.0), wie die Knoepfe "IO-Liste erstellen", "Sensorliste
- * erstellen" und "Export Testdaten"; sie lesen die Zeichnungen nur:
+ * Listen (seit 2.6.0), wie die Knoepfe "IO-Liste erstellen",
+ * "Feldgeraeteliste erstellen" (seit 2.9.0, ersetzt "sensorliste") und
+ * "Export Testdaten"; sie lesen die Zeichnungen nur:
  *
  *     { "aktion": "io_liste", "projekt": "<Projektordner>",
  *       "filter": "HW" }          ("" = alle Datenpunkte, "HW" = IO-Belegung,
  *                                  "BUS;SMI" = mehrere Integrationsarten)
  *
- *     { "aktion": "sensorliste", "projekt": "<Projektordner>" }
+ *     { "aktion": "feldgeraeteliste", "projekt": "<Projektordner>" }
  *
  *     { "aktion": "testdaten", "projekt": "<Projektordner>",
  *       "geoeffnete_blaetter": "abbrechen" }   (optional, oder "weiter")
@@ -66,7 +67,7 @@ namespace BatchProcessing {
 
 struct OcAuftrag {
     QString id;                 ///< Kennung des Aufrufers, sonst Zeitstempel
-    QString aktion;             ///< "erstellen", "pdf", "io_liste", "sensorliste", "testdaten", "aufbauen"
+    QString aktion;             ///< "erstellen", "pdf", "io_liste", "feldgeraeteliste", "testdaten", "aufbauen"
     QString projekt;            ///< Projektordner (Schreibweise mit /)
 
     // aktion "erstellen"
@@ -93,10 +94,10 @@ struct OcAuftrag {
     QString erstellliste;
     bool vorschau = false;
 
-    /// Listen-Auftrag (io_liste, sensorliste, testdaten): liest die
+    /// Listen-Auftrag (io_liste, feldgeraeteliste, testdaten): liest die
     /// Zeichnungen nur und aendert sie nicht
     bool istListe() const {
-        return aktion == "io_liste" || aktion == "sensorliste" || aktion == "testdaten";
+        return aktion == "io_liste" || aktion == "feldgeraeteliste" || aktion == "testdaten";
     }
 
     /// Auftragsdatei lesen und pruefen. Unbekannte Schluessel gelten als

@@ -194,6 +194,39 @@ struct OcLlBuildResult {
     QString error;
 };
 
+// ----------------------------------------------------------------------------
+// Feldgeraeteliste
+// ----------------------------------------------------------------------------
+
+/// Ein Feldgeraet einer Quellzeichnung: Blockreferenz im Modellbereich mit
+/// gefuelltem OC_AKS - mit oder ohne aktiven Datenpunkt
+struct OcFgDevice {
+    QString block;                  ///< Blockname wie im Eigenschaftenfenster (bei *U... der Name der Definition)
+    QString aks;                    ///< OC_AKS, wie es im Block steht (ohne Leerzeichen aussen)
+    QString bezeichnung;            ///< OC_BEZEICHNUNG
+    QString produkt;                ///< OC_PRODUKT
+    QString bas;                    ///< BAS des Geraets bis einschliesslich OC_AKS, leer ohne BAS
+    /// Aktive Datenpunkte: (OC_FCODE_DP_n, OC_BAS_DP_n) in der Reihenfolge n
+    QVector<QPair<QString, QString>> datenpunkte;
+    /// Ausfuehrung aus dem Feldgeraete-Stempel (OC_LISTE enthaelt FG), dessen
+    /// Linie auf GA-Feldgeraetestempel-Verbindung an diesem Geraet endet:
+    /// die sichtbaren Stempelzeilen, z. B. "Antrieb 5 Nm, Tauchhuelse 150 mm".
+    /// Leer ohne Stempel.
+    QString ausfuehrung;
+    QString ausfuehrungStempel;     ///< OC_ANLAGE dieses Stempels, z. B. "[5] Klappen"
+    double x = 0, y = 0;            ///< Einfuegepunkt
+};
+
+/// Was eine Quellzeichnung zur Feldgeraeteliste beitraegt
+struct OcFgScan {
+    QVector<OcFgDevice> devices;    ///< von links nach rechts, bei gleichem x von oben nach unten
+    QStringList ohneAks;            ///< Bloecke mit aktivem Datenpunkt, aber leerem OC_AKS (Blockname)
+    QString ortskennzeichen;        ///< Plankopf ORTSKENNZEICHEN
+    int fgStempel = 0;              ///< Feldgeraete-Stempel auf dem Blatt
+    /// Stempel ohne Linie, Linie ohne Geraet, Geraet mit zwei Stempeln (fuers Protokoll)
+    QStringList stempelHinweise;
+};
+
 // ============================================================================
 // Hilfsfunktionen ohne Zeichnung
 // ============================================================================
@@ -399,6 +432,22 @@ public:
     /// ASP-Band, Kopf, Zeilen, bei Bedarf Summe. Trennlinien, die die Liste
     /// kreuzen, werden eingefroren.
     OcLlBuildResult buildLeistungsliste(const OcLlLayout& layout, const OcLlPage& page);
+
+    // ------------------------------------------------------------------
+    // Feldgeraeteliste
+    // ------------------------------------------------------------------
+
+    /// Feldgeraete lesen: jede Blockreferenz im Modellbereich mit gefuelltem
+    /// OC_AKS, mit oder ohne aktiven Datenpunkt; ein leeres OC_AKS ist kein
+    /// Geraet. BAS = der des ersten aktiven Datenpunkts; hat das Geraet
+    /// keinen, wird er mit basSegments (BAS.csv) wie in genBas gebildet, nur
+    /// fuer die Liste. Gekuerzt wird nach OC_AKS. Dazu die Ausfuehrung aus
+    /// Feldgeraete-Stempeln (OC_LISTE enthaelt FG): jede Linie auf dem Layer
+    /// GA-Feldgeraetestempel-Verbindung, die mit einem Ende am Stempel liegt,
+    /// gibt dem Geraet am anderen Ende (Toleranz tol) die sichtbaren
+    /// Stempelzeilen. Ein Stempel darf mehrere Linien haben. Aendert nichts.
+    OcFgScan scanFeldgeraete(const QVector<OcBasSegment>* basSegments = nullptr,
+                             double tol = 0.5) const;
 
 private:
     struct Impl;

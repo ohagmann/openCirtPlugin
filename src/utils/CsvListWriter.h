@@ -2,7 +2,7 @@
  * @file CsvListWriter.h
  * @brief Schreibt eine Liste als CSV-Datei
  *
- * Ausgabeformat der Sensorliste und der Datenpunkt-/IO-Belegungsliste:
+ * Ausgabeformat der Feldgeraeteliste und der Datenpunkt-/IO-Belegungsliste:
  *   - UTF-8 mit BOM (damit auch Excel die Umlaute beim Doppelklick erkennt)
  *   - Trennzeichen Semikolon, wie bei den uebrigen CSV-Dateien des Projekts
  *   - Zeilenende CRLF, auf jedem Betriebssystem gleich

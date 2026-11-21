@@ -1,0 +1,16 @@
+Block:;BMK:;Funktion:;Geräteart:;Kategorie:;Lieferung:;Darstellung in Liste:;Ausführung Pflicht:
+;TVL;;Tauchtemperaturfühler;Sensor;GA;ja;ja
+;TRL;;Tauchtemperaturfühler;Sensor;GA;ja;ja
+;TAU;;Außentemperaturfühler;Sensor;GA;ja;
+;TZU;;Kanaltemperaturfühler;Sensor;GA;ja;
+;PPE;;Umwälzpumpe;Motor;HZG;ja;
+;ZUV;;Ventilator;Motor;RLT;ja;
+;ABV;;Ventilator;Motor;RLT;ja;
+;ZUV;REP;Reparaturschalter;Schalter;ELT;ja;
+;ABV;REP;Reparaturschalter;Schalter;ELT;ja;
+OC_VORLAGE_3W_VENTIL_HZG;;;3-Wege-Regelventil mit Antrieb;Ventil;GA;ja;
+OC_VORLAGE_2W_VENTIL_HZG;;;2-Wege-Regelventil mit Antrieb;Ventil;GA;ja;
+;BSK;;Brandschutzklappe mit Antrieb;Klappe;RLT;ja;
+;ASR;;Schaltschrankmeldung;-;-;nein;
+;GRF;;Anlagenbild;-;-;nein;
+;ANL;;Anlagendatenpunkte;-;-;nein;

@@ -22,7 +22,7 @@ Unter Linux laeuft alles wie unter Windows:
   - Projekt erstellen (Gesamtlauf), BAS konfigurieren
   - Projekt bereinigen
   - PDF publizieren mit Inhaltsverzeichnis
-  - IO-Liste / Datenpunktliste, Sensorliste
+  - IO-Liste / Datenpunktliste, Feldgeraeteliste
 
 Bis 1.7.3 hiess die Datei batchtool-<Version>.lrx und enthielt zusaetzlich
 die Stapelverarbeitung (Text, Attribute, Layer, LISP). Die gibt es seit 2.0

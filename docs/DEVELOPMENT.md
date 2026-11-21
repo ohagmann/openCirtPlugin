@@ -22,10 +22,11 @@ openCirt ist als BRX-Modul aufgebaut (Windows: `.brx`, Linux: `.lrx`), das als S
 │  core/     Verarbeitungslogik           │
 │            OpenCirtEngine (Gesamtlauf),  │
 │            ProjectBuilder (Erstellliste),│
+│            Leistungsliste, Feldgeraete-  │
+│            liste, OcAuftrag,             │
 │            TextAlignment                 │
 ├─────────────────────────────────────────┤
-│  utils/    CsvListWriter,                │
-│            SensorKeywordLoader           │
+│  utils/    CsvListWriter                 │
 └─────────────────────────────────────────┘
 ```
 
@@ -53,7 +54,7 @@ openCirt ist als BRX-Modul aufgebaut (Windows: `.brx`, Linux: `.lrx`), das als S
 
 *Sicherungskopien.* `OcDrawing::save()` legt vor dem Überschreiben eine `*.bak` an, je Zeichnung und Lauf einmal; `OcEngine::beginBackupRun()` beginnt einen neuen Lauf (`OpenCirtTab::beginRun()` ruft es auf). Die Sicherung zeigt damit den Stand vor dem Lauf, auch wenn der Lauf eine Zeichnung mehrmals speichert. Blätter, die der Lauf eben erst aus einer Vorlage kopiert hat, gehen über `processNewDrawing()` und bekommen keine.
 
-*Extraktionsdaten gehören einem Lauf.* Die extrahierten CSV-Dateien liegen in einem Tempordner je Projekt und Zweck (`projectExtractDir()`). `resetExtractDir()` leert ihn zu Beginn eines Laufs, `endRun()` erklärt ihn für verbraucht, und `readExtractedData()` liest nur, solange `extractDirUsable()` gilt – also nie etwas, das ein früherer Lauf oder ein anderes Projekt hinterlassen hat. Wer die Daten braucht, extrahiert selbst: `extractDrawings()` liest die Zeichnungen nur zum Auswerten (`OcDrawing::open(path, true)`) und ändert sie nicht. So arbeitet die Sensorliste.
+*Extraktionsdaten gehören einem Lauf.* Die extrahierten CSV-Dateien liegen in einem Tempordner je Projekt und Zweck (`projectExtractDir()`). `resetExtractDir()` leert ihn zu Beginn eines Laufs, `endRun()` erklärt ihn für verbraucht, und `readExtractedData()` liest nur, solange `extractDirUsable()` gilt – also nie etwas, das ein früherer Lauf oder ein anderes Projekt hinterlassen hat. Wer die Daten braucht, extrahiert selbst: `extractDrawings()` liest die Zeichnungen nur zum Auswerten (`OcDrawing::open(path, true)`) und ändert sie nicht. So arbeitet die Feldgeräteliste (`OcDrawing::scanFeldgeraete`, ohne Tempordner).
 
 *Dateien im Format der Skripte.* Die extrahierten CSV-Dateien werden so geschrieben, wie LISP sie schrieb (Windows-1252, alles andere als `\U+XXXX`). Für das Füllen der GA-FL-Blätter reicht der Gesamtlauf die Zeilen im Speicher weiter; der Umweg über die Datei beschädigte früher Zeichen wie `’`.
 
