@@ -128,6 +128,14 @@ struct OcTextWidthResult {
     int skipCount = 0;              ///< Attribute ohne Zellzuordnung
 };
 
+/// Hyperlink einer Zeile eines Eintragsblocks (Inhaltsverzeichnis)
+struct OcRowLink {
+    int row = 0;                    ///< Zeile 1..n, Attribut-Tags <Praefix>..._NN
+    QString url;                    ///< Zielzeichnung, relativ zur Zeichnung mit dem Block
+    QString location;               ///< benannter Ort: Layout der Zielzeichnung
+    QString description;            ///< Beschreibung (Hinweis im PDF-Betrachter)
+};
+
 // ----------------------------------------------------------------------------
 // Anlagenleistungsliste
 // ----------------------------------------------------------------------------
@@ -376,6 +384,19 @@ public:
     /// auf das Muster passt. found meldet, ob es das Attribut gibt.
     QString attributeValue(const QString& upperTag, const QString& blockPattern,
                            bool* found = nullptr) const;
+
+    /// Je Zeile eines Eintragsblocks einen unsichtbaren Hyperlink ueber die
+    /// ganze Zeile legen: einen Text aus einem Leerzeichen, eingepasst vom
+    /// linken bis zum rechten Rand der Zeile, mit dem Hyperlink der Zeile
+    /// (Erweiterte Daten PE_URL, wie sie BricsCAD schreibt). Die Zeilen sind
+    /// die Attribute <tagPrefix>..._NN des ersten Blocks, dessen Name (wie im
+    /// Eigenschaftenfenster) auf blockPattern passt; der Text liegt auf dem
+    /// Layer der Zeile im Bereich des Blocks. Der PDF-Publish macht daraus
+    /// einen Sprung auf das Blatt, wenn das Ziel im selben PDF steht - ein
+    /// Attribut selbst traegt keinen Link ins PDF, ein Objekt auf einem nicht
+    /// druckenden Layer auch nicht. Rueckgabe: Anzahl der angelegten Links.
+    int addRowLinks(const QString& blockPattern, const QString& tagPrefix,
+                    const QVector<OcRowLink>& links);
 
     // ------------------------------------------------------------------
     // Deckblatt und Layer

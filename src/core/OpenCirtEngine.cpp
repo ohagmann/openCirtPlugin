@@ -1435,6 +1435,157 @@ QString OcDrawing::attributeValue(const QString& upperTag, const QString& blockP
 }
 
 // ============================================================================
+// Hyperlinks der Zeilen eines Eintragsblocks
+// ============================================================================
+
+namespace {
+
+/// Anwendungsnamen fuer Erweiterte Daten anlegen, falls er fehlt
+bool ensureRegApp(AcDbDatabase* db, const ACHAR* name)
+{
+    AcDbRegAppTable* pTable = nullptr;
+    if (db->getRegAppTable(pTable, AcDb::kForRead) != Acad::eOk || !pTable) return false;
+    bool ok = pTable->has(name);
+    if (!ok && pTable->upgradeOpen() == Acad::eOk) {
+        AcDbRegAppTableRecord* pRecord = new AcDbRegAppTableRecord();
+        pRecord->setName(name);
+        if (pTable->add(pRecord) == Acad::eOk) {
+            pRecord->close();
+            ok = true;
+        } else {
+            delete pRecord;
+        }
+    }
+    pTable->close();
+    return ok;
+}
+
+} // namespace
+
+int OcDrawing::addRowLinks(const QString& blockPattern, const QString& tagPrefix,
+                           const QVector<OcRowLink>& links)
+{
+    if (!d->db || d->readOnly || links.isEmpty()) return 0;
+
+    const QString pattern = OcEngine::lispUpper(blockPattern);
+    const QString prefix = OcEngine::lispUpper(tagPrefix);
+    Impl::Ins* block = nullptr;
+    for (Impl::Ins& ins : d->inserts) {
+        if (!ins.attrs.isEmpty() && OcEngine::wildMatch(pattern, d->effectiveUpper(ins))) {
+            block = &ins;
+            break;
+        }
+    }
+    if (!block) return 0;
+
+    // Zeilen aus ihren Attributen: Mitte, linker und rechter Rand,
+    // Texthoehe und Layer
+    struct Row {
+        double mid = 0.0;
+        double left = 0.0;
+        double right = 0.0;
+        double height = 0.0;
+        AcDbObjectId layer;
+        bool known = false;
+    };
+    QMap<int, Row> rows;
+    for (const Impl::Attr& a : block->attrs) {
+        if (!a.upper.startsWith(prefix)) continue;
+        const int sep = a.upper.lastIndexOf(QLatin1Char('_'));
+        bool isNumber = false;
+        const int row = sep < 0 ? 0 : a.upper.mid(sep + 1).toInt(&isNumber);
+        if (!isNumber || row <= 0) continue;
+        AcDbAttribute* pAttr = nullptr;
+        if (acdbOpenObject(pAttr, a.id, AcDb::kForRead) != Acad::eOk || !pAttr) continue;
+        const double height = pAttr->height();
+        // Linksbuendig beginnt der Text an der Lage, sonst steht er am
+        // Ausrichtungspunkt; die Mitte liegt eine halbe Texthoehe ueber der
+        // Grundlinie
+        const double x = pAttr->horizontalMode() == AcDb::kTextLeft
+            ? pAttr->position().x : pAttr->alignmentPoint().x;
+        const double mid = pAttr->position().y + height / 2.0;
+        Row& r = rows[row];
+        if (!r.known) {
+            r.mid = mid;
+            r.left = r.right = x;
+            r.height = height;
+            r.layer = pAttr->layerId();
+            r.known = true;
+        } else {
+            r.left = std::min(r.left, x);
+            r.right = std::max(r.right, x);
+        }
+        pAttr->close();
+    }
+    if (rows.isEmpty()) return 0;
+
+    AcDbObjectId spaceId;
+    {
+        AcDbEntity* pRef = nullptr;
+        if (acdbOpenObject(pRef, block->id, AcDb::kForRead) != Acad::eOk || !pRef) return 0;
+        spaceId = pRef->ownerId();
+        pRef->close();
+    }
+    if (!ensureRegApp(d->db, L"PE_URL")) return 0;
+    AcDbBlockTableRecord* pSpace = nullptr;
+    if (acdbOpenObject(pSpace, spaceId, AcDb::kForWrite) != Acad::eOk || !pSpace) return 0;
+
+    int count = 0;
+    for (const OcRowLink& link : links) {
+        const auto it = rows.constFind(link.row);
+        if (it == rows.constEnd() || link.url.isEmpty()) continue;
+        const Row& r = it.value();
+        // Zeilenabstand zur Nachbarzeile, sonst die dreifache Texthoehe
+        double pitch = 3.0 * r.height;
+        for (const int neighbour : { link.row + 1, link.row - 1 }) {
+            const auto n = rows.constFind(neighbour);
+            if (n != rows.constEnd() && std::fabs(n.value().mid - r.mid) > 1e-9) {
+                pitch = std::fabs(n.value().mid - r.mid);
+                break;
+            }
+        }
+        // BricsCAD legt den Link eines Textes von 0,226 Texthoehen unter die
+        // Grundlinie bis 0,834 darueber: so steht er mittig in der Zeile und
+        // reicht nicht in die Nachbarzeilen
+        const double height = 0.9 * pitch;
+        const double base = r.mid - 0.304 * height;
+        AcDbText* pText = new AcDbText();
+        pText->setDatabaseDefaults(d->db);
+        pText->setLayer(r.layer);
+        pText->setTextString(L" ");
+        pText->setHeight(height);
+        pText->setHorizontalMode(AcDb::kTextFit);
+        pText->setVerticalMode(AcDb::kTextBase);
+        pText->setPosition(AcGePoint3d(r.left - r.height / 2.0, base, 0.0));
+        pText->setAlignmentPoint(AcGePoint3d(r.right + 3.0 * r.height, base, 0.0));
+        AcDbObjectId textId;
+        if (pSpace->appendAcDbEntity(textId, pText) != Acad::eOk) {
+            delete pText;
+            continue;
+        }
+        adjustTextAlignment(pText, d->db);
+        // Hyperlink wie BricsCAD ihn schreibt: Adresse { Beschreibung Ort }
+        const std::wstring url = link.url.toStdWString();
+        const std::wstring description = link.description.toStdWString();
+        const std::wstring location = link.location.toStdWString();
+        resbuf* rb = acutBuildList(AcDb::kDxfRegAppName, L"PE_URL",
+                                   AcDb::kDxfXdAsciiString, url.c_str(),
+                                   AcDb::kDxfXdControlString, L"{",
+                                   AcDb::kDxfXdAsciiString, description.c_str(),
+                                   AcDb::kDxfXdAsciiString, location.c_str(),
+                                   AcDb::kDxfXdControlString, L"}",
+                                   RTNONE);
+        if (rb) {
+            if (pText->setXData(rb) == Acad::eOk) ++count;
+            acutRelRb(rb);
+        }
+        pText->close();
+    }
+    pSpace->close();
+    return count;
+}
+
+// ============================================================================
 // Deckblatt und Layer
 // ============================================================================
 

@@ -5,6 +5,19 @@ Alle wesentlichen Änderungen am openCirt-Plugin werden in dieser Datei dokument
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Versionierung: Bump bei Änderungen am Plugin-Binary (C++/GUI). Kein Bump bei reinen Änderungen an Vorlagen, LISP-Skripten, Dokumentation oder Repo-Konfiguration.
 
+## [2.10.0] - 2026-11-24
+
+### Added
+- **Inhaltsverzeichnis mit Links.** Jede Zeile des Inhaltsverzeichnisses, die ein Blatt nennt, springt im PDF auf dieses Blatt. openCirt legt dafür beim Erzeugen der Inhaltsseiten je Zeile einen unsichtbaren Text an (ein Leerzeichen, „Einpassen“ vom linken bis zum rechten Rand der Zeile, auf dem Layer der Zeile) mit einem Hyperlink auf die Zeichnung des Blatts – Pfad relativ zum Inhaltsblatt, benannter Ort = ihr erstes Papierlayout, Beschreibung = Zeichnungsnummer. Der PDF-Publish macht daraus einen Sprung auf die Seite, weil das Ziel im selben PDF steht (mit „Hyperlinks exportieren“, das openCirt im DSD schon immer setzt).
+  - Ein unsichtbarer Text, weil BricsCAD Links nur von gedruckten Objekten ins PDF übernimmt – nicht von Attributen (die Zeilen sind Attribute des Eintragsblocks) und nicht von Objekten auf nicht druckenden Layern. Ein Leerzeichen bleibt mit jeder Plotstiltabelle unsichtbar, auch einfarbig.
+  - Ohne benannten Ort (Layout) macht BricsCAD aus einem Link auf eine Zeichnung nur einen Dateiverweis; deshalb steht das Layout im Link.
+  - Das Layout jeder Zeichnung wird je PDF-Lauf einmal gelesen und für Inhaltsverzeichnis und DSD gemeinsam verwendet.
+
+### Geprüft (Linux, BricsCAD V26, eigene Testinstanz, Kopie eines Projekts)
+- PDF-Lauf eines Projekts mit 471 Blättern: 10 Inhaltsseiten, 208 Einträge, 189 Links (die übrigen 19 Zeilen sind Gruppenüberschriften ohne Blatt). Im PDF springt jeder der 189 Links auf genau die Seite, die als Seitenzahl in seiner Zeile steht (Abgleich Link-Ziel gegen den Text der Zeile). Die Inhaltsseiten sehen aus wie vorher.
+- Vorversuch auf einer Kopie eines Inhaltsblatts: Links an Attributen und an Objekten auf nicht druckenden Layern übernimmt BricsCAD nicht ins PDF; ein Link ohne benannten Ort wird ein Dateiverweis statt eines Sprungs; ein Text „Einpassen“ aus Leerzeichen gibt einen Link genau über die Zeile, ein Text „Ausrichten“ einen viel zu hohen. Weiße oder transparente Rechtecke wären mit einer einfarbigen Plotstiltabelle sichtbar.
+- Binaries 2.10.0: Linux V26/V27, Windows V27.
+
 ## [2.9.0] - 2026-11-20
 
 ### Added

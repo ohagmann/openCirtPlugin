@@ -485,6 +485,8 @@ Das Inhaltsverzeichnis wird automatisch aus allen Zeichnungen im Projekt generie
 
 Grundlage ist die Blattvorlage `OC_VORLAGE_DIN_A2_INHALTSVERZEICHNIS_V1.dwg`, die den Eintragsblock mit allen Zeilen bereits enthält – 22 Einträge pro Seite, bei Bedarf werden automatisch weitere Seiten erzeugt.
 
+**Links im PDF (seit 2.10.0):** Ein Klick auf eine Zeile, die ein Blatt nennt, springt im PDF auf dieses Blatt. Dafür liegt über jeder solchen Zeile ein unsichtbarer Text (ein Leerzeichen, eingepasst über die ganze Zeile) mit einem Hyperlink auf die Zeichnung des Blatts und ihr Layout. Im Plot ist davon nichts zu sehen.
+
 ### 10.2 PDF-Publish
 
 Nach dem Inhaltsverzeichnis wird automatisch ein Multi-Sheet-PDF erzeugt, an dem Ort und unter dem Namen, die im Dialog angegeben werden (üblich: Ordner `06- Plot/`). Das PDF enthält alle Zeichnungen in der korrekten Reihenfolge:

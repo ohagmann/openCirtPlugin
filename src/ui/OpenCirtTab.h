@@ -29,6 +29,7 @@
 #include <QString>
 #include <QStringList>
 #include <QMap>
+#include <QHash>
 #include <QDateTime>
 #include <QVector>
 #include <QJsonObject>
@@ -503,6 +504,7 @@ private:
         QString anlage;         ///< Anlage identifier (e.g. TKA1010)
         QString zeichnungsNr;   ///< ZEICHNUNGSNUMMER or filename fallback
         int seite = 0;          ///< Page number in final PDF
+        QString dwgPath;        ///< Blatt des Eintrags (Ziel des Links der Zeile)
     };
     
     /// Collect all DWGs in correct order for publishing
@@ -518,6 +520,11 @@ private:
     
     /// Find the Inhaltsverzeichnis sheet template DWG (22 rows preplaced)
     QString findInhaltVorlage();
+
+    /// Erstes Papierlayout einer Zeichnung (Ziel der Links im
+    /// Inhaltsverzeichnis, Blatt im DSD); je Lauf einmal gelesen
+    QString layoutNameOf(const QString& dwgPath);
+    QHash<QString, QString> m_layoutNames;
     
     /// Delete existing Inhalt DWG files
     int cleanupInhalt();

@@ -5187,6 +5187,7 @@ void OpenCirtTab::planSummarySheets(const QVector<SourceDrawingInfo>& drawings) 
 
 // Forward declaration (defined below near DSD generation)
 static QString readZeichnungsnummer(const QString& dwgPath);
+static QString getFirstPaperSpaceLayoutName(const QString& dwgPath);
 
 void OpenCirtTab::applyFolderHierarchie(SourceDrawingInfo& info, const QString& dwgPath) {
     // Struktur: Los / ASP / Gewerk / Anlage / *.dwg - die Ebenen nach ihrer Lage
@@ -5474,6 +5475,7 @@ QVector<OpenCirtTab::TocEntry> OpenCirtTab::buildTocEntries(
             const QString zeichnungsNr = readZeichnungsnummer(dwgPath);
             entry.zeichnungsNr = zeichnungsNr.isEmpty() ? fileName : zeichnungsNr;
             entry.seite = i + 1 + tocPageCount;
+            entry.dwgPath = dwgPath;
             entries.append(entry);
             continue;
         }
@@ -5534,6 +5536,7 @@ QVector<OpenCirtTab::TocEntry> OpenCirtTab::buildTocEntries(
         QString zeichnungsNr = readZeichnungsnummer(dwgPath);
         entry.zeichnungsNr = zeichnungsNr.isEmpty() ? fileName : zeichnungsNr;
         entry.seite = pageNum;
+        entry.dwgPath = dwgPath;
         
         entries.append(entry);
     }
@@ -5576,6 +5579,7 @@ int OpenCirtTab::createInhaltPages(
     RunCounts counts;
     int created = 0;
     int entryIdx = 0;
+    int linkCount = 0;
 
     beginPhase("Inhaltsverzeichnis", tocPageCount);
     for (int page = 1; page <= tocPageCount; ++page) {
@@ -5586,6 +5590,7 @@ int OpenCirtTab::createInhaltPages(
         // Collect this page's tag/value pairs
         int rowsThisPage = qMin(OpenCirtConfig::INHALT_ROWS_PER_PAGE, entries.size() - entryIdx);
         OcPairs pairs;
+        QVector<OcRowLink> rowLinks;
 
         for (int row = 0; row < rowsThisPage && entryIdx < entries.size(); ++row, ++entryIdx) {
             const TocEntry& e = entries[entryIdx];
@@ -5606,6 +5611,19 @@ int OpenCirtTab::createInhaltPages(
             addPair("ZEICHNUNGSNUMMER", e.zeichnungsNr);
             if (e.seite > 0)
                 addPair("SEITE", QString::number(e.seite));
+
+            // Die Zeile springt im PDF auf ihr Blatt: Hyperlink auf die
+            // Zeichnung (relativ zum Inhaltsblatt, das im Zeichnungsordner
+            // liegt) und ihr Layout - ohne Layout macht BricsCAD daraus nur
+            // einen Dateiverweis
+            if (e.seite > 0 && !e.dwgPath.isEmpty()) {
+                OcRowLink link;
+                link.row = row + 1;
+                link.url = QDir::toNativeSeparators(QDir(drawingsDir).relativeFilePath(e.dwgPath));
+                link.location = layoutNameOf(e.dwgPath);
+                link.description = e.zeichnungsNr;
+                rowLinks << link;
+            }
         }
 
         // Plankopf-Zeichnungsnummer. Bewusst nach den Stammdaten, damit dieser
@@ -5637,14 +5655,24 @@ int OpenCirtTab::createInhaltPages(
                            dwg.setAttributes(plankopfPairs);
                        }
                        dwg.setAttributes(inhaltPlankopf);
+                       if (!rowLinks.isEmpty()) {
+                           const int added = dwg.addRowLinks(
+                               OpenCirtConfig::INHALT_BLOCK_PATTERN,
+                               QStringLiteral("OC_INHALT_"), rowLinks);
+                           linkCount += added;
+                           if (added < rowLinks.size()) {
+                               log(QString("%1: %2 von %3 Links der Zeilen angelegt")
+                                   .arg(targetName).arg(added).arg(rowLinks.size()), "WARN");
+                           }
+                       }
                    })) {
             ++created;
         }
         stepDone(targetName);
     }
 
-    log(QString("Inhaltsverzeichnis: %1 Seiten, %2 Eintraege%3")
-        .arg(created).arg(entries.size())
+    log(QString("Inhaltsverzeichnis: %1 Seiten, %2 Eintraege, %3 Links%4")
+        .arg(created).arg(entries.size()).arg(linkCount)
         .arg(plankopfPairs.isEmpty() ? ", ohne Plankopf-Stammdaten"
                                      : QString(", inkl. %1 Plankopf-Attributen")
                                        .arg(m_plankopfCsvData.size())));
@@ -5793,6 +5821,15 @@ static QString getFirstPaperSpaceLayoutName(const QString& dwgPath)
  * @param dwgPath Full path to the DWG file
  * @return Attribute value, or empty string if not found
  */
+QString OpenCirtTab::layoutNameOf(const QString& dwgPath)
+{
+    auto it = m_layoutNames.constFind(dwgPath);
+    if (it == m_layoutNames.constEnd()) {
+        it = m_layoutNames.insert(dwgPath, getFirstPaperSpaceLayoutName(dwgPath));
+    }
+    return it.value();
+}
+
 static QString readZeichnungsnummer(const QString& dwgPath)
 {
     AcDbDatabase* pDb = new AcDbDatabase(false, false);
@@ -6075,7 +6112,7 @@ QString OpenCirtTab::generateDsdFile(const QStringList& orderedDwgs,
         QString dwgWin = QDir::toNativeSeparators(dwgPath);
         
         // Read actual layout name from DWG (e.g. "DIN-A2", "DIN-A1")
-        QString layoutName = getFirstPaperSpaceLayoutName(dwgPath);
+        QString layoutName = layoutNameOf(dwgPath);
         
         // Titel des Lesezeichens: mit Konfiguration aus deren Segmenten,
         // sonst wie bisher die Zeichnungsnummer mit Fallback Dateiname
@@ -6182,6 +6219,7 @@ void OpenCirtTab::onPublishPdf() {
     
     // Step 0: Cleanup old Inhalt DWGs
     cleanupInhalt();
+    m_layoutNames.clear();   // Layouts je Lauf neu lesen
     
     // Step 1: Collect DWGs WITHOUT Inhalt pages (they don't exist yet)
     QStringList orderedDwgs = collectOrderedDwgsForPublish();
